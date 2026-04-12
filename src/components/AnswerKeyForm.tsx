@@ -9,7 +9,6 @@ interface AnswerKeyFormProps {
   onInviteCodeChange: (value: string) => void;
   onAnswerKeyChange: (value: string) => void;
   onFillDemo: () => void;
-  onStart: () => void;
 }
 
 export default function AnswerKeyForm({
@@ -21,10 +20,17 @@ export default function AnswerKeyForm({
   onInviteCodeChange,
   onAnswerKeyChange,
   onFillDemo,
-  onStart,
 }: AnswerKeyFormProps) {
   return (
     <section className="demo-panel">
+      <div className="step-heading">
+        <span className="step-index">第 1 步</span>
+        <div>
+          <h3 className="step-title">填写体验码和标准答案</h3>
+          <p className="step-copy">先确认答案，再进入上传步骤，避免批改前信息不完整。</p>
+        </div>
+      </div>
+
       <div className="field-group">
         <label htmlFor="invite-code">体验码</label>
         <input
@@ -71,15 +77,6 @@ export default function AnswerKeyForm({
       </div>
 
       {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
-
-      <button
-        className="primary-button full-width"
-        type="button"
-        onClick={onStart}
-        disabled={busy}
-      >
-        {busy ? '正在准备批改…' : '开始体验'}
-      </button>
     </section>
   );
 }

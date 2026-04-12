@@ -205,6 +205,7 @@ h3 {
 .boundary-grid,
 .contact-grid,
 .demo-layout,
+.demo-flow,
 .wrong-list,
 .advice-list {
   display: grid;
@@ -237,6 +238,41 @@ h3 {
 
 .demo-layout {
   margin-top: 20px;
+  grid-template-columns: 1fr;
+}
+
+.step-heading {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(215, 90, 32, 0.12);
+  color: var(--accent-deep);
+  font-weight: 800;
+}
+
+.step-title {
+  margin: 0;
+}
+
+.step-copy,
+.start-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.start-panel {
+  margin-top: 16px;
 }
 
 .field-group + .field-group {
@@ -438,11 +474,6 @@ textarea {
 
   .boundary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .demo-layout {
-    grid-template-columns: 1.15fr 0.85fr;
-    align-items: start;
   }
 
   .asset-links {

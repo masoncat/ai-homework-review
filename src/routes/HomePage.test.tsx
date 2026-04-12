@@ -7,8 +7,14 @@ describe('HomePage', () => {
     render(<HomePage />);
 
     expect(screen.getByText('先填标准答案，再上传学生答题卡')).toBeInTheDocument();
+    expect(screen.getByText('第 1 步')).toBeInTheDocument();
+    expect(screen.getByText('第 2 步')).toBeInTheDocument();
+    expect(screen.getByText('第 3 步')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '填入演示答案' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('输入体验码')).toBeInTheDocument();
+    expect(
+      screen.getByText(/先上传答题卡图片，再开始体验/)
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: /下载演示答题卡图片/ })
     ).toHaveAttribute('href', 'test-sheets/scheme-b-filled.png');

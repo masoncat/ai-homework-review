@@ -26,6 +26,14 @@ export default function UploadPanel({
 }: UploadPanelProps) {
   return (
     <section className="demo-panel muted-panel">
+      <div className="step-heading">
+        <span className="step-index">第 2 步</span>
+        <div>
+          <h3 className="step-title">上传答题卡图片</h3>
+          <p className="step-copy">必须先上传图片，系统才能识别题号、答案并进入真实批改。</p>
+        </div>
+      </div>
+
       <div className="field-group">
         <label htmlFor="sheet-upload">答题卡图片</label>
         <input

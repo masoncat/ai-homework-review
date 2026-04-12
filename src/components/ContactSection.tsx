@@ -6,11 +6,11 @@ export default function ContactSection() {
       <div className="contact-grid">
         <article>
           <strong>微信</strong>
-          <p>HomeworkAI-Demo</p>
+          <p>dafenglanjin</p>
         </article>
         <article>
           <strong>邮箱</strong>
-          <p>demo@ai-homework-review.com</p>
+          <p>threehxhot@163.com</p>
         </article>
         <article>
           <strong>预约试用</strong>

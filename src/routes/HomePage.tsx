@@ -199,7 +199,6 @@ export default function HomePage({
               setAnswerKey(demoAnswerKey);
               setSubmitError('');
             }}
-            onStart={handleStart}
           />
           <UploadPanel
             fileName={selectedFile?.name ?? ''}
@@ -207,6 +206,27 @@ export default function HomePage({
             onFileChange={setSelectedFile}
           />
         </div>
+
+        <section className="demo-panel start-panel">
+          <div className="step-heading">
+            <span className="step-index">第 3 步</span>
+            <div>
+              <h3 className="step-title">确认信息并开始体验</h3>
+              <p className="step-copy">先上传答题卡图片，再开始体验。</p>
+            </div>
+          </div>
+          <p className="start-hint">
+            当前会按真实链路执行：签发会话、申请上传凭证、上传图片、识别答案并生成讲评。
+          </p>
+          <button
+            className="primary-button full-width"
+            type="button"
+            onClick={handleStart}
+            disabled={busy}
+          >
+            {busy ? '正在准备批改…' : '开始体验'}
+          </button>
+        </section>
 
         <ProcessingState phase={phase} />
       </section>
