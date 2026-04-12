@@ -1,0 +1,57 @@
+edition: 3.0.0
+name: ai-homework-review-api
+
+resources:
+  grade-api:
+    component: fc3
+    props:
+      region: ${env(ALIYUN_REGION)}
+      service:
+        name: ai-homework-review
+        internetAccess: true
+      functionName: ai-homework-review-api
+      runtime: nodejs20
+      timeout: 60
+      handler: bundle/index.handler
+      code: ./
+      triggers:
+        - triggerName: httpTrigger
+          triggerType: http
+          qualifier: LATEST
+          triggerConfig:
+            authType: anonymous
+            disableURLInternet: false
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - PATCH
+              - HEAD
+              - OPTIONS
+      environmentVariables:
+        JWT_SECRET: ${env(JWT_SECRET)}
+        ALLOWED_ORIGINS: ${env(ALLOWED_ORIGINS)}
+        INVITE_CODES: ${env(INVITE_CODES)}
+        HUMAN_CHECK_TOKEN: ${env(HUMAN_CHECK_TOKEN)}
+        PUBLIC_BASE_URL: ${env(PUBLIC_BASE_URL)}
+        OBJECT_STORE_DRIVER: ${env(OBJECT_STORE_DRIVER)}
+        OSS_BUCKET: ${env(OSS_BUCKET)}
+        OSS_REGION: ${env(OSS_REGION)}
+        OSS_ENDPOINT: ${env(OSS_ENDPOINT)}
+        OSS_ACCESS_KEY_ID: ${env(OSS_ACCESS_KEY_ID)}
+        OSS_ACCESS_KEY_SECRET: ${env(OSS_ACCESS_KEY_SECRET)}
+        OSS_UPLOAD_PREFIX: ${env(OSS_UPLOAD_PREFIX)}
+        OSS_UPLOAD_EXPIRES_IN_SECONDS: ${env(OSS_UPLOAD_EXPIRES_IN_SECONDS)}
+        OSS_MAX_SIZE_BYTES: ${env(OSS_MAX_SIZE_BYTES)}
+        OSS_STS_ROLE_ARN: ${env(OSS_STS_ROLE_ARN)}
+        OSS_STS_SESSION_NAME: ${env(OSS_STS_SESSION_NAME)}
+        OSS_STS_DURATION_SECONDS: ${env(OSS_STS_DURATION_SECONDS)}
+        OSS_STS_ENDPOINT: ${env(OSS_STS_ENDPOINT)}
+        OCR_AI_BASE_URL: ${env(OCR_AI_BASE_URL)}
+        OCR_AI_API_KEY: ${env(OCR_AI_API_KEY)}
+        OCR_AI_MODEL: ${env(OCR_AI_MODEL)}
+        TEXT_AI_BASE_URL: ${env(TEXT_AI_BASE_URL)}
+        TEXT_AI_API_KEY: ${env(TEXT_AI_API_KEY)}
+        TEXT_AI_MODEL: ${env(TEXT_AI_MODEL)}
+        TEXT_AI_STREAM: ${env(TEXT_AI_STREAM)}

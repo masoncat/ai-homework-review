@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800">
+  <rect width="1200" height="1800" fill="#efe8da" />
+  <g transform="translate(120 80) rotate(-4 480 820)">
+    <rect width="960" height="1640" rx="36" fill="#fffdf7" stroke="#d5dbe5" stroke-width="4" />
+    <text x="72" y="118" font-size="52" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#18202e">方案 B 测试答题卡</text>
+    <text x="72" y="176" font-size="28" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#64748b">轻微倾斜拍摄样例</text>
+    <rect x="72" y="260" width="380" height="92" rx="20" fill="none" stroke="#94a3b8" stroke-width="3" />
+    <rect x="72" y="410" width="816" height="650" rx="28" fill="none" stroke="#cbd5e1" stroke-width="2" />
+    <rect x="72" y="1100" width="816" height="360" rx="28" fill="none" stroke="#cbd5e1" stroke-width="2" />
+  </g>
+</svg>

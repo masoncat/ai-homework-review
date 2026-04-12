@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800">
+  <rect width="1200" height="1800" fill="#f5efe4" />
+  <rect x="70" y="60" width="1060" height="1680" rx="40" fill="#fffdf8" stroke="#d8dde6" stroke-width="4" />
+  <text x="130" y="160" font-size="56" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#18202e">方案 B 学生答题卡</text>
+  <text x="130" y="225" font-size="28" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#64748b">选择题 1-8，填空题 9-12，真实联调样例</text>
+
+  <rect x="130" y="290" width="420" height="92" rx="20" fill="none" stroke="#94a3b8" stroke-width="3" />
+  <text x="165" y="348" font-size="30" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#475569">姓名：王小明</text>
+
+  <rect x="130" y="430" width="930" height="710" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+  <rect x="130" y="1175" width="930" height="420" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+
+  <text x="170" y="495" font-size="32" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#334155">选择题答题区</text>
+  <text x="170" y="1240" font-size="32" font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#334155">填空题答题区</text>
+
+  <g font-family="Noto Sans SC, PingFang SC, sans-serif" fill="#1f2937">
+    <text x="190" y="585" font-size="34">1. A</text>
+    <text x="470" y="585" font-size="34">2. C</text>
+    <text x="750" y="585" font-size="34">3. B</text>
+
+    <text x="190" y="705" font-size="34">4. D</text>
+    <text x="470" y="705" font-size="34">5. A</text>
+    <text x="750" y="705" font-size="34">6. B</text>
+
+    <text x="190" y="825" font-size="34">7. C</text>
+    <text x="470" y="825" font-size="34">8. D</text>
+
+    <text x="190" y="1335" font-size="36">9. 12</text>
+    <text x="190" y="1430" font-size="36">10. 3/4</text>
+    <text x="190" y="1525" font-size="36">11. 18</text>
+    <text x="190" y="1620" font-size="36">12. 24</text>
+  </g>
+
+  <g stroke="#e2e8f0" stroke-width="2">
+    <line x1="160" y1="620" x2="1030" y2="620" />
+    <line x1="160" y1="740" x2="1030" y2="740" />
+    <line x1="160" y1="860" x2="1030" y2="860" />
+  </g>
+</svg>
