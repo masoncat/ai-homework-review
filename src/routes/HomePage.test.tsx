@@ -1,8 +1,28 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import HomePage from './HomePage';
 
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+});
+
 describe('HomePage', () => {
+  it('prefills the invite code from the page query string', () => {
+    window.history.replaceState({}, '', '/?inviteCode=url-demo#/');
+
+    render(<HomePage />);
+
+    expect(screen.getByPlaceholderText('输入体验码')).toHaveValue('url-demo');
+  });
+
+  it('falls back to the hash query string when the page query string is empty', () => {
+    window.history.replaceState({}, '', '/#/?inviteCode=hash-demo');
+
+    render(<HomePage />);
+
+    expect(screen.getByPlaceholderText('输入体验码')).toHaveValue('hash-demo');
+  });
+
   it('shows the answer key helper copy and invite code field', () => {
     render(<HomePage />);
 

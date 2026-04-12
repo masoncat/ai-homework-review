@@ -23,6 +23,28 @@ import { isApiConfigured } from '../lib/env';
 const demoAnswerKey =
   '1.A 2.C 3.B 4.D 5.A 6.B 7.C 8.D 9.12 10.3/4 11.18 12.24';
 
+function readInviteCodeFromUrl(location: Location = window.location) {
+  const pageQueryInviteCode = new URLSearchParams(location.search)
+    .get('inviteCode')
+    ?.trim();
+
+  if (pageQueryInviteCode) {
+    return pageQueryInviteCode;
+  }
+
+  const queryIndex = location.hash.indexOf('?');
+
+  if (queryIndex === -1) {
+    return '';
+  }
+
+  return (
+    new URLSearchParams(location.hash.slice(queryIndex + 1))
+      .get('inviteCode')
+      ?.trim() ?? ''
+  );
+}
+
 export interface HomePageProps {
   requestSession?: (input: {
     inviteCode: string;
@@ -72,7 +94,7 @@ export default function HomePage({
   uploadFile = defaultUploadFile,
   submitGrade = defaultSubmitGrade,
 }: HomePageProps) {
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(() => readInviteCodeFromUrl());
   const [answerKey, setAnswerKey] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<
