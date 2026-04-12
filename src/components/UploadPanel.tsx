@@ -1,7 +1,22 @@
+import type { MouseEvent } from 'react';
+
 interface UploadPanelProps {
   fileName: string;
   disabled: boolean;
   onFileChange: (file: File | null) => void;
+}
+
+const demoSheetHref = 'test-sheets/scheme-b-filled.png';
+const cleanSheetHref = 'test-sheets/scheme-b-clean.svg';
+const fractionSheetHref = 'test-sheets/scheme-b-fraction.svg';
+
+function handleDemoSheetClick(event: MouseEvent<HTMLAnchorElement>) {
+  if (!window.matchMedia('(pointer: coarse)').matches) {
+    return;
+  }
+
+  event.preventDefault();
+  window.open(event.currentTarget.href, '_blank', 'noopener,noreferrer');
 }
 
 export default function UploadPanel({
@@ -27,13 +42,31 @@ export default function UploadPanel({
           当前适合固定版式题单、答题卡，不适合自由排版作业本。
         </p>
         <div className="asset-links">
-          <a href="/test-sheets/scheme-b-filled.png" download="scheme-b-filled.png">
-            下载演示答题卡图片
+          <a
+            className="asset-link-button asset-link-primary"
+            href={demoSheetHref}
+            download="scheme-b-filled.png"
+            target="_blank"
+            rel="noreferrer"
+            onClick={handleDemoSheetClick}
+          >
+            <span>下载演示答题卡图片</span>
+            <small>手机端可点开后长按保存</small>
           </a>
-          <a href="/test-sheets/scheme-b-clean.svg" target="_blank" rel="noreferrer">
+          <a
+            className="asset-link-button"
+            href={cleanSheetHref}
+            target="_blank"
+            rel="noreferrer"
+          >
             查看标准答题卡
           </a>
-          <a href="/test-sheets/scheme-b-fraction.svg" target="_blank" rel="noreferrer">
+          <a
+            className="asset-link-button"
+            href={fractionSheetHref}
+            target="_blank"
+            rel="noreferrer"
+          >
             查看分数填空样例
           </a>
         </div>

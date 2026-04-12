@@ -10,8 +10,8 @@ describe('HomePage', () => {
     expect(screen.getByRole('button', { name: '填入演示答案' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('输入体验码')).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: '下载演示答题卡图片' })
-    ).toHaveAttribute('href', '/test-sheets/scheme-b-filled.png');
+      screen.getByRole('link', { name: /下载演示答题卡图片/ })
+    ).toHaveAttribute('href', 'test-sheets/scheme-b-filled.png');
   });
 
   it('requests a session before starting upload', async () => {
