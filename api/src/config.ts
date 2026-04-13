@@ -25,6 +25,9 @@ export interface AppConfig {
   textAiApiKey: string;
   textAiModel: string;
   textAiStream: boolean;
+  batchVisionAiBaseUrl: string;
+  batchVisionAiApiKey: string;
+  batchVisionAiModel: string;
 }
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -70,5 +73,11 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     textAiApiKey: env.TEXT_AI_API_KEY ?? '',
     textAiModel: env.TEXT_AI_MODEL ?? 'gpt-5.4',
     textAiStream: env.TEXT_AI_STREAM === 'true',
+    batchVisionAiBaseUrl:
+      env.BATCH_VISION_AI_BASE_URL ??
+      env.OCR_AI_BASE_URL ??
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    batchVisionAiApiKey: env.BATCH_VISION_AI_API_KEY ?? '',
+    batchVisionAiModel: env.BATCH_VISION_AI_MODEL ?? 'qwen-vl-max-latest',
   };
 }
