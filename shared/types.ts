@@ -59,3 +59,40 @@ export interface UploadPolicyResponse {
   fields?: Record<string, string>;
   ossSts?: OssStsCredentials;
 }
+
+export type BatchReviewLevel = '超出预期' | '达到预期' | '基本达到' | '待提升';
+
+export interface BatchReviewPageResult {
+  pageNo: number;
+  displayName: string;
+  score: number;
+  level: BatchReviewLevel;
+  summary: string;
+  strengths: string[];
+  issues: string[];
+  suggestions: string[];
+}
+
+export interface BatchReviewSummaryRow {
+  pageNo: number;
+  displayName: string;
+  score: number;
+  level: BatchReviewLevel;
+  summary: string;
+}
+
+export interface BatchReviewSummary {
+  totalPages: number;
+  averageScore: number;
+  rows: BatchReviewSummaryRow[];
+  levelCounts: Record<BatchReviewLevel, number>;
+}
+
+export interface BatchReviewResult {
+  taskId: string;
+  rubricObjectKey: string;
+  answerPdfObjectKey: string;
+  totalPages: number;
+  pages: BatchReviewPageResult[];
+  summary: BatchReviewSummary;
+}
