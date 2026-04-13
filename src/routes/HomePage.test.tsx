@@ -7,6 +7,15 @@ afterEach(() => {
 });
 
 describe('HomePage', () => {
+  it('shows a separate entry for class batch review', () => {
+    render(<HomePage />);
+
+    expect(screen.getByRole('link', { name: '班级批量批改' })).toHaveAttribute(
+      'href',
+      '#/batch-review'
+    );
+  });
+
   it('prefills the invite code from the page query string', () => {
     window.history.replaceState({}, '', '/?inviteCode=url-demo#/');
 

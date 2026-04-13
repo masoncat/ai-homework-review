@@ -1,11 +1,13 @@
 import { gradeSubmission } from '../../shared/grading';
 import type {
   AnswerKeyItem,
+  BatchReviewResult,
   GradeResponse,
   RecognizedAnswer,
 } from '../../shared/types';
 
 const STORAGE_KEY = 'ai-homework-review:last-result';
+const BATCH_STORAGE_KEY = 'ai-homework-review:last-batch-result';
 
 function rotateChoice(answer: string) {
   const order = ['A', 'B', 'C', 'D'];
@@ -69,6 +71,24 @@ export function loadLatestGradeResponse(): GradeResponse | null {
 
   try {
     return JSON.parse(raw) as GradeResponse;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLatestBatchReviewResult(result: BatchReviewResult) {
+  sessionStorage.setItem(BATCH_STORAGE_KEY, JSON.stringify(result));
+}
+
+export function loadLatestBatchReviewResult(): BatchReviewResult | null {
+  const raw = sessionStorage.getItem(BATCH_STORAGE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as BatchReviewResult;
   } catch {
     return null;
   }

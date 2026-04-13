@@ -1,4 +1,5 @@
 import type {
+  BatchReviewResult,
   GradeResponse,
   SessionResponse,
   UploadPolicyResponse,
@@ -15,6 +16,12 @@ export interface GradeInput {
   accessToken: string;
   answerKey: string;
   objectKey: string;
+}
+
+export interface BatchReviewInput {
+  accessToken: string;
+  answerPdfObjectKey: string;
+  rubricObjectKey: string;
 }
 
 function resolveOssClientEndpoint(endpoint: string, bucket: string) {
@@ -194,6 +201,28 @@ export async function submitGrade(input: GradeInput): Promise<GradeResponse> {
 
   if (!res.ok) {
     throw new Error('提交批改失败');
+  }
+
+  return res.json();
+}
+
+export async function submitBatchReview(
+  input: BatchReviewInput
+): Promise<BatchReviewResult> {
+  const res = await fetch(resolveUrl('/batch-review'), {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${input.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      answerPdfObjectKey: input.answerPdfObjectKey,
+      rubricObjectKey: input.rubricObjectKey,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error('提交批量批改失败');
   }
 
   return res.json();

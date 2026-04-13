@@ -183,6 +183,19 @@ export default function HomePage({
     <main className="page-shell">
       <HeroSection />
 
+      <section className="demo-panel batch-entry-card">
+        <div>
+          <p className="eyebrow">新功能入口</p>
+          <h2>班级单题批量批改</h2>
+          <p className="hero-copy">
+            整班同题 PDF、自由排版过程题、老师评分标准，统一走新的 3 步向导页。
+          </p>
+        </div>
+        <a className="secondary-button" href="#/batch-review">
+          班级批量批改
+        </a>
+      </section>
+
       <section className="capability-card">
         <p className="eyebrow">能力说明</p>
         <div className="triple-grid">
