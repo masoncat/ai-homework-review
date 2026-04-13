@@ -40,7 +40,14 @@ interface ObjectStoreWithBytes {
   ) => Promise<void>;
 }
 
-type RenderPdfPages = (pdfBytes: Uint8Array) => Promise<RenderedPdfPage[]>;
+type StreamRenderedPage = (page: RenderedPdfPage) => Promise<void>;
+
+interface RenderPdfPagesInput {
+  pdfBytes: Uint8Array;
+  onPage: StreamRenderedPage;
+}
+
+type RenderPdfPages = (input: RenderPdfPagesInput) => Promise<void>;
 
 if (!('DOMMatrix' in globalThis)) {
   Object.assign(globalThis, { DOMMatrix });
@@ -53,44 +60,59 @@ if (!('Path2D' in globalThis)) {
 }
 
 async function renderPdfPagesWithPdfJs(
-  pdfBytes: Uint8Array
-): Promise<RenderedPdfPage[]> {
+  input: RenderPdfPagesInput
+): Promise<void> {
   const loadingTask = getDocument({
-    data: pdfBytes,
+    data: input.pdfBytes,
     useWorkerFetch: false,
     isEvalSupported: false,
   });
   const pdf = await loadingTask.promise;
-  const renderedPages: RenderedPdfPage[] = [];
 
   try {
     for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
       const page = await pdf.getPage(pageNo);
-      const viewport = page.getViewport({ scale: 2 });
-      const canvas = createCanvas(
-        Math.ceil(viewport.width),
-        Math.ceil(viewport.height)
-      );
-      const context = canvas.getContext('2d');
+      try {
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = createCanvas(
+          Math.ceil(viewport.width),
+          Math.ceil(viewport.height)
+        );
+        const context = canvas.getContext('2d');
 
-      await page.render({
-        canvasContext: context as never,
-        viewport,
-      }).promise;
+        await page.render({
+          canvasContext: context as never,
+          viewport,
+        }).promise;
 
-      renderedPages.push({
-        pageNo,
-        bytes: new Uint8Array(canvas.toBuffer('image/png')),
-        contentType: 'image/png',
-      });
-
-      page.cleanup();
+        await input.onPage({
+          pageNo,
+          bytes: new Uint8Array(canvas.toBuffer('image/png')),
+          contentType: 'image/png',
+        });
+      } finally {
+        page.cleanup();
+      }
     }
   } finally {
     await loadingTask.destroy();
   }
+}
 
-  return renderedPages;
+function resolvePageExtension(contentType: string) {
+  const normalized = contentType.toLowerCase();
+
+  if (normalized === 'image/png') {
+    return 'png';
+  }
+  if (normalized === 'image/jpeg') {
+    return 'jpg';
+  }
+  if (normalized === 'image/webp') {
+    return 'webp';
+  }
+
+  throw new Error(`暂不支持的页面图片类型: ${contentType}`);
 }
 
 export function createPdfPageExtractor({
@@ -106,24 +128,25 @@ export function createPdfPageExtractor({
         answerPdfObjectKey,
         runtime
       );
-      const renderedPages = await renderPdfPages(pdfBytes);
-
       const savedPages: ExtractedPdfPage[] = [];
-
-      for (const page of renderedPages) {
-        const objectKey = `${outputPrefix}/page-${page.pageNo}.png`;
-        await objectStore.saveObject(
-          objectKey,
-          page.bytes,
-          page.contentType,
-          runtime
-        );
-        savedPages.push({
-          pageNo: page.pageNo,
-          objectKey,
-          contentType: page.contentType,
-        });
-      }
+      await renderPdfPages({
+        pdfBytes,
+        onPage: async (page) => {
+          const extension = resolvePageExtension(page.contentType);
+          const objectKey = `${outputPrefix}/page-${page.pageNo}.${extension}`;
+          await objectStore.saveObject(
+            objectKey,
+            page.bytes,
+            page.contentType,
+            runtime
+          );
+          savedPages.push({
+            pageNo: page.pageNo,
+            objectKey,
+            contentType: page.contentType,
+          });
+        },
+      });
 
       return savedPages;
     },

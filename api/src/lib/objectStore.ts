@@ -18,6 +18,10 @@ export interface ObjectStore {
     fileName: string,
     runtime?: ObjectStoreRuntimeContext
   ) => Promise<UploadPolicyResponse>;
+  getObjectBytes?: (
+    objectKey: string,
+    runtime?: ObjectStoreRuntimeContext
+  ) => Promise<Uint8Array>;
   saveObject?: (
     objectKey: string,
     bytes: Uint8Array,
@@ -66,6 +70,7 @@ interface OssObjectStoreOptions {
   stsEndpoint?: string;
   stsFetcher?: StsFetcher;
   uploader?: OssUploader;
+  downloader?: OssDownloader;
 }
 
 type OssUploader = (input: {
@@ -81,6 +86,18 @@ type OssUploader = (input: {
     securityToken?: string;
   };
 }) => Promise<void>;
+
+type OssDownloader = (input: {
+  bucket: string;
+  endpoint: string;
+  region: string;
+  objectKey: string;
+  credentials: {
+    accessKeyId: string;
+    accessKeySecret: string;
+    securityToken?: string;
+  };
+}) => Promise<Uint8Array>;
 
 const DEFAULT_UPLOAD_PREFIX = 'uploads/demo';
 const DEFAULT_EXPIRES_IN_SECONDS = 300;
@@ -101,6 +118,22 @@ const StsClient = (StsSdk as { default?: new (...args: never[]) => unknown })
 
 function bytesToBase64(bytes: Uint8Array) {
   return Buffer.from(bytes).toString('base64');
+}
+
+function toUint8Array(value: unknown) {
+  if (value instanceof Uint8Array) {
+    return new Uint8Array(value);
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return new Uint8Array(value);
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+
+  throw new Error('OSS 返回了无法识别的对象内容');
 }
 
 function sanitizeFileName(fileName: string) {
@@ -359,6 +392,28 @@ const defaultOssUploader: OssUploader = async ({
   });
 };
 
+const defaultOssDownloader: OssDownloader = async ({
+  bucket,
+  endpoint,
+  region,
+  objectKey,
+  credentials,
+}) => {
+  const client = new OSS({
+    bucket,
+    endpoint: resolveOssSdkEndpoint(endpoint, bucket),
+    region: region.startsWith('oss-') ? region : `oss-${region}`,
+    accessKeyId: credentials.accessKeyId,
+    accessKeySecret: credentials.accessKeySecret,
+    stsToken: credentials.securityToken,
+    secure: endpoint.startsWith('https://'),
+    authorizationV4: true,
+  });
+  const result = await client.get(objectKey);
+
+  return toUint8Array(result.content);
+};
+
 export function createMemoryObjectStore(
   publicBaseUrl = 'https://demo.example.com'
 ): ObjectStore {
@@ -385,6 +440,15 @@ export function createMemoryObjectStore(
     async saveObject(objectKey, bytes, contentType) {
       store.set(objectKey, { bytes, contentType });
     },
+    async getObjectBytes(objectKey) {
+      const found = store.get(objectKey);
+
+      if (!found) {
+        throw new Error('未找到已上传的答题卡图片');
+      }
+
+      return new Uint8Array(found.bytes);
+    },
     async getObjectAiInput(objectKey) {
       const found = store.get(objectKey);
 
@@ -403,6 +467,7 @@ export function createOssObjectStore(
 ): ObjectStore {
   const stsFetcher = createStsFetcher(options);
   const uploader = options.uploader ?? defaultOssUploader;
+  const downloader = options.downloader ?? defaultOssDownloader;
 
   return {
     async createUploadPolicy(fileName, runtime) {
@@ -581,6 +646,28 @@ export function createOssObjectStore(
         objectKey,
         bytes,
         contentType,
+        credentials: {
+          accessKeyId: credentials.accessKeyId,
+          accessKeySecret: credentials.accessKeySecret,
+          ...(credentials.securityToken
+            ? { securityToken: credentials.securityToken }
+            : {}),
+        },
+      });
+    },
+    async getObjectBytes(objectKey, runtime) {
+      const endpoint = resolveEndpoint(
+        options.bucket,
+        options.region,
+        options.endpoint
+      );
+      const credentials = resolveCredentials(options, runtime);
+
+      return downloader({
+        bucket: options.bucket,
+        endpoint,
+        region: options.region,
+        objectKey,
         credentials: {
           accessKeyId: credentials.accessKeyId,
           accessKeySecret: credentials.accessKeySecret,

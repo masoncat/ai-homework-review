@@ -5,6 +5,7 @@ import { corsHeaders, withCors } from './lib/cors.js';
 import { createObjectStoreFromConfig } from './lib/objectStore.js';
 import { createMemoryRateLimitStore } from './lib/rateLimit.js';
 import { readObjectStoreRuntimeContext } from './lib/runtimeContext.js';
+import { createBatchReviewProvider } from './lib/batchVisionProvider.js';
 import { createTeachingProvider } from './lib/teachingProvider.js';
 import { createVisionProvider } from './lib/visionProvider.js';
 import authRoute from './routes/auth.js';
@@ -32,14 +33,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const teachingProvider =
     options.teachingProvider ?? createTeachingProvider(config);
   const batchReviewProvider =
-    options.batchReviewProvider ??
-    ({
-      async reviewBatch() {
-        throw new HTTPException(503, {
-          message: '批量批改能力尚未完成配置',
-        });
-      },
-    } satisfies AppBindings['Variables']['batchReviewProvider']);
+    options.batchReviewProvider ?? createBatchReviewProvider(config, objectStore);
   const rateLimitStore =
     options.rateLimitStore ?? createMemoryRateLimitStore();
 

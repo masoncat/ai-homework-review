@@ -9,9 +9,13 @@ describe('createPdfPageExtractor', () => {
     };
     const extractor = createPdfPageExtractor({
       objectStore: objectStore as never,
-      renderPdfPages: async () => [
-        { pageNo: 1, bytes: new Uint8Array([9]), contentType: 'image/png' },
-      ],
+      renderPdfPages: async ({ onPage }) => {
+        await onPage({
+          pageNo: 1,
+          bytes: new Uint8Array([9]),
+          contentType: 'image/png',
+        });
+      },
     });
 
     const result = await extractor.extractPages({

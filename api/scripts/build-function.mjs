@@ -8,6 +8,7 @@ await mkdir(outdir, { recursive: true });
 await build({
   entryPoints: ['src/index.ts'],
   bundle: true,
+  external: ['@napi-rs/canvas', '@napi-rs/canvas-*'],
   platform: 'node',
   format: 'cjs',
   target: 'node20',

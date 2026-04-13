@@ -21,6 +21,9 @@ describe('createMemoryObjectStore', () => {
     expect(await store.getObjectAiInput(policy.objectKey)).toBe(
       'data:image/jpeg;base64,AQID'
     );
+    expect(await store.getObjectBytes?.(policy.objectKey)).toEqual(
+      new Uint8Array([1, 2, 3])
+    );
   });
 });
 
@@ -140,6 +143,35 @@ describe('createOssObjectStore', () => {
           accessKeyId: 'STS.UPLOAD',
           accessKeySecret: 'upload-secret',
           securityToken: 'upload-token',
+        },
+      })
+    );
+  });
+
+  it('reads raw object bytes through the configured downloader', async () => {
+    const downloader = vi.fn(async () => new Uint8Array([7, 8, 9]));
+    const store = createOssObjectStore({
+      bucket: 'demo-bucket',
+      region: 'cn-shanghai',
+      endpoint: 'https://demo-bucket.oss-cn-shanghai.aliyuncs.com',
+      accessKeyId: 'STS.TEST',
+      accessKeySecret: 'top-secret',
+      securityToken: 'sts-token',
+      downloader,
+    });
+
+    const bytes = await store.getObjectBytes?.('uploads/demo/answers.pdf');
+
+    expect(bytes).toEqual(new Uint8Array([7, 8, 9]));
+    expect(downloader).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bucket: 'demo-bucket',
+        objectKey: 'uploads/demo/answers.pdf',
+        region: 'cn-shanghai',
+        credentials: {
+          accessKeyId: 'STS.TEST',
+          accessKeySecret: 'top-secret',
+          securityToken: 'sts-token',
         },
       })
     );
