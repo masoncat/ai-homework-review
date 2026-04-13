@@ -180,16 +180,19 @@ export function createBatchReviewProvider(
     'batchVisionAiApiKey' | 'batchVisionAiBaseUrl' | 'batchVisionAiModel'
   >,
   objectStore: ObjectStore,
-  pdfPageExtractor: PdfPageExtractor = createPdfPageExtractor({
-    objectStore: requirePdfCapableObjectStore(objectStore),
-  }),
+  pdfPageExtractor?: PdfPageExtractor,
   scorePage: ScorePageFn = scoreBatchReviewPage
 ): BatchReviewProvider {
   return {
     async reviewBatch(input, options) {
       assertBatchVisionConfigured(config);
+      const activePdfPageExtractor =
+        pdfPageExtractor ??
+        createPdfPageExtractor({
+          objectStore: requirePdfCapableObjectStore(objectStore),
+        });
 
-      const pageObjects = await pdfPageExtractor.extractPages({
+      const pageObjects = await activePdfPageExtractor.extractPages({
         answerPdfObjectKey: input.answerPdfObjectKey,
         outputPrefix: `derived/batch/${crypto.randomUUID()}`,
         runtime: options?.objectStoreRuntime,
