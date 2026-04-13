@@ -7,6 +7,7 @@ import {
 describe('normalizeBatchReviewLevel', () => {
   it('maps arbitrary model labels into the supported level set', () => {
     expect(normalizeBatchReviewLevel('达到预期')).toBe('达到预期');
+    expect(normalizeBatchReviewLevel('基本达到')).toBe('基本达到');
     expect(normalizeBatchReviewLevel('待改进')).toBe('待提升');
     expect(normalizeBatchReviewLevel('超出预期')).toBe('超出预期');
   });
@@ -41,5 +42,23 @@ describe('buildBatchReviewSummary', () => {
       },
     ]);
     expect(summary.levelCounts['达到预期']).toBe(1);
+  });
+
+  it('counts normalized levels without misclassifying 基本达到', () => {
+    const summary = buildBatchReviewSummary([
+      {
+        pageNo: 2,
+        displayName: '第 2 份',
+        score: 7,
+        level: '基本达到',
+        summary: '解题方向正确，但步骤略有跳跃',
+        strengths: ['能找出关键信息'],
+        issues: ['步骤不够完整'],
+        suggestions: ['补全中间推导'],
+      },
+    ]);
+
+    expect(summary.levelCounts['基本达到']).toBe(1);
+    expect(summary.levelCounts['达到预期']).toBe(0);
   });
 });

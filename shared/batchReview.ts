@@ -13,14 +13,17 @@ const BATCH_REVIEW_LEVELS: BatchReviewLevel[] = [
 
 export function normalizeBatchReviewLevel(input: string): BatchReviewLevel {
   const cleaned = (input ?? '').trim();
+  if (BATCH_REVIEW_LEVELS.includes(cleaned as BatchReviewLevel)) {
+    return cleaned as BatchReviewLevel;
+  }
   if (cleaned.includes('超出')) {
     return '超出预期';
   }
-  if (cleaned.includes('达到')) {
-    return '达到预期';
-  }
   if (cleaned.includes('基本')) {
     return '基本达到';
+  }
+  if (cleaned.includes('达到')) {
+    return '达到预期';
   }
   return '待提升';
 }
