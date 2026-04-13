@@ -9,6 +9,7 @@ describe('normalizeBatchReviewLevel', () => {
     expect(normalizeBatchReviewLevel('达到预期')).toBe('达到预期');
     expect(normalizeBatchReviewLevel('基本达到')).toBe('基本达到');
     expect(normalizeBatchReviewLevel('待改进')).toBe('待提升');
+    expect(normalizeBatchReviewLevel('未达到预期')).toBe('待提升');
     expect(normalizeBatchReviewLevel('超出预期')).toBe('超出预期');
   });
 
@@ -60,5 +61,40 @@ describe('buildBatchReviewSummary', () => {
 
     expect(summary.levelCounts['基本达到']).toBe(1);
     expect(summary.levelCounts['达到预期']).toBe(0);
+  });
+
+  it('normalizes row levels and preserves summary contract defaults', () => {
+    const summary = buildBatchReviewSummary([
+      {
+        pageNo: 3,
+        displayName: '第 3 份',
+        score: 7,
+        level: '待提升',
+        summary: '需要补充关键步骤',
+        strengths: ['知道题意'],
+        issues: ['推导不完整'],
+        suggestions: ['补充中间过程'],
+      },
+      {
+        pageNo: 4,
+        displayName: '第 4 份',
+        score: 8,
+        level: '整体基本达标' as never,
+        summary: '整体正确，表达可更完整',
+        strengths: ['思路正确'],
+        issues: ['语言不够完整'],
+        suggestions: ['补充说明句'],
+      },
+    ]);
+
+    expect(summary.totalPages).toBe(2);
+    expect(summary.averageScore).toBe(7.5);
+    expect(summary.rows[1]?.level).toBe('基本达到');
+    expect(summary.levelCounts).toEqual({
+      超出预期: 0,
+      达到预期: 0,
+      基本达到: 1,
+      待提升: 1,
+    });
   });
 });

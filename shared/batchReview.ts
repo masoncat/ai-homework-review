@@ -16,6 +16,14 @@ export function normalizeBatchReviewLevel(input: string): BatchReviewLevel {
   if (BATCH_REVIEW_LEVELS.includes(cleaned as BatchReviewLevel)) {
     return cleaned as BatchReviewLevel;
   }
+  if (
+    cleaned.includes('未达到') ||
+    cleaned.includes('未达标') ||
+    cleaned.includes('待改进') ||
+    cleaned.includes('待提升')
+  ) {
+    return '待提升';
+  }
   if (cleaned.includes('超出')) {
     return '超出预期';
   }
@@ -32,12 +40,13 @@ export function buildBatchReviewSummary(pages: BatchReviewPageResult[]): BatchRe
   const totalPages = pages.length;
   let sumScore = 0;
   const rows = pages.map((page) => {
+    const level = normalizeBatchReviewLevel(page.level);
     sumScore += page.score;
     return {
       pageNo: page.pageNo,
       displayName: page.displayName,
       score: page.score,
-      level: page.level,
+      level,
       summary: page.summary,
     };
   });
