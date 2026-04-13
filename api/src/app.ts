@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { readConfig } from './config.js';
 import { corsHeaders, withCors } from './lib/cors.js';
 import { createObjectStoreFromConfig } from './lib/objectStore.js';
@@ -34,7 +35,9 @@ export function createApp(options: CreateAppOptions = {}) {
     options.batchReviewProvider ??
     ({
       async reviewBatch() {
-        throw new Error('批量批改能力尚未完成配置');
+        throw new HTTPException(503, {
+          message: '批量批改能力尚未完成配置',
+        });
       },
     } satisfies AppBindings['Variables']['batchReviewProvider']);
   const rateLimitStore =
@@ -63,6 +66,10 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   app.onError((error, c) => {
+    if (error instanceof HTTPException) {
+      return c.json({ message: error.message }, error.status);
+    }
+
     if (error instanceof Error) {
       return c.json({ message: error.message }, 400);
     }

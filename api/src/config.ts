@@ -77,7 +77,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.BATCH_VISION_AI_BASE_URL ??
       env.OCR_AI_BASE_URL ??
       'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    batchVisionAiApiKey: env.BATCH_VISION_AI_API_KEY ?? '',
-    batchVisionAiModel: env.BATCH_VISION_AI_MODEL ?? 'qwen-vl-max-latest',
+    batchVisionAiApiKey:
+      env.BATCH_VISION_AI_API_KEY ?? env.OCR_AI_API_KEY ?? env.AI_API_KEY ?? '',
+    batchVisionAiModel:
+      env.BATCH_VISION_AI_MODEL ??
+      env.OCR_AI_MODEL ??
+      env.AI_MODEL ??
+      'qwen-vl-max-latest',
   };
 }
