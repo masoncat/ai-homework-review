@@ -13,6 +13,7 @@
     "@alicloud/openapi-client": "^0.4.15",
     "@alicloud/sts20150401": "^1.2.0",
     "@napi-rs/canvas": "^0.1.66",
+    "@napi-rs/canvas-linux-x64-gnu": "^0.1.97",
     "ali-oss": "^6.23.0",
     "hono": "^4.7.0",
     "jose": "^5.10.0",
