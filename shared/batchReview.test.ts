@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { BatchReviewPageResult } from './types';
 import {
   buildBatchReviewSummary,
   normalizeBatchReviewLevel,
+  normalizeBatchReviewScore,
 } from './batchReview';
 
 describe('normalizeBatchReviewLevel', () => {
@@ -24,6 +26,8 @@ describe('buildBatchReviewSummary', () => {
       {
         pageNo: 1,
         displayName: '第 1 份',
+        answerImageObjectKey: 'derived/page-1.png',
+        answerImageUrl: 'https://oss.example.com/page-1.png',
         score: 8,
         level: '达到预期',
         summary: '图示完整，但数量关系说明不够清楚',
@@ -50,6 +54,8 @@ describe('buildBatchReviewSummary', () => {
       {
         pageNo: 2,
         displayName: '第 2 份',
+        answerImageObjectKey: 'derived/page-2.png',
+        answerImageUrl: 'https://oss.example.com/page-2.png',
         score: 7,
         level: '基本达到',
         summary: '解题方向正确，但步骤略有跳跃',
@@ -68,6 +74,8 @@ describe('buildBatchReviewSummary', () => {
       {
         pageNo: 3,
         displayName: '第 3 份',
+        answerImageObjectKey: 'derived/page-3.png',
+        answerImageUrl: 'https://oss.example.com/page-3.png',
         score: 7,
         level: '待提升',
         summary: '需要补充关键步骤',
@@ -78,6 +86,8 @@ describe('buildBatchReviewSummary', () => {
       {
         pageNo: 4,
         displayName: '第 4 份',
+        answerImageObjectKey: 'derived/page-4.png',
+        answerImageUrl: 'https://oss.example.com/page-4.png',
         score: 8,
         level: '整体基本达标' as never,
         summary: '整体正确，表达可更完整',
@@ -96,5 +106,24 @@ describe('buildBatchReviewSummary', () => {
       基本达到: 1,
       待提升: 1,
     });
+  });
+});
+
+describe('normalizeBatchReviewScore', () => {
+  it('keeps 10-point scores as-is', () => {
+    expect(normalizeBatchReviewScore(8)).toBe(8);
+    expect(normalizeBatchReviewScore(8.5)).toBe(8.5);
+  });
+
+  it('converts 100-point model scores into 10-point scores', () => {
+    expect(normalizeBatchReviewScore(85)).toBe(8.5);
+    expect(normalizeBatchReviewScore(100)).toBe(10);
+  });
+
+  it('rounds freeform scores into half-point buckets', () => {
+    expect(normalizeBatchReviewScore(8.24)).toBe(8);
+    expect(normalizeBatchReviewScore(8.26)).toBe(8.5);
+    expect(normalizeBatchReviewScore(8.74)).toBe(8.5);
+    expect(normalizeBatchReviewScore(8.76)).toBe(9);
   });
 });

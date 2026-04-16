@@ -1,5 +1,6 @@
 import type { AppConfig } from './config.js';
 import type { BatchReviewProvider } from './lib/batchVisionProvider.js';
+import type { BatchReviewTaskStore } from './lib/batchReviewTaskStore.js';
 import type { ObjectStore } from './lib/objectStore.js';
 import type { ObjectStoreRuntimeContext } from './lib/objectStore.js';
 import type { RateLimitStore } from './lib/rateLimit.js';
@@ -16,6 +17,7 @@ export type AppBindings = {
     visionProvider: VisionProvider;
     teachingProvider: TeachingProvider;
     batchReviewProvider: BatchReviewProvider;
+    batchReviewTaskStore: BatchReviewTaskStore;
     objectStore: ObjectStore;
     objectStoreRuntimeContext: ObjectStoreRuntimeContext | null;
     rateLimitStore: RateLimitStore;

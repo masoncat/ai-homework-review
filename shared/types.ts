@@ -65,6 +65,8 @@ export type BatchReviewLevel = '超出预期' | '达到预期' | '基本达到' 
 export interface BatchReviewPageResult {
   pageNo: number;
   displayName: string;
+  answerImageObjectKey: string;
+  answerImageUrl: string;
   score: number;
   level: BatchReviewLevel;
   summary: string;
@@ -95,4 +97,24 @@ export interface BatchReviewResult {
   totalPages: number;
   pages: BatchReviewPageResult[];
   summary: BatchReviewSummary;
+}
+
+export type BatchReviewTaskStatus =
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed';
+
+export interface BatchReviewTaskSnapshot {
+  taskId: string;
+  status: BatchReviewTaskStatus;
+  answerPdfObjectKey: string;
+  rubricObjectKey: string;
+  totalPages?: number;
+  processedPages: number;
+  pendingPageNos?: number[];
+  createdAt: string;
+  updatedAt: string;
+  errorMessage?: string;
+  result?: BatchReviewResult;
 }

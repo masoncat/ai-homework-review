@@ -1,9 +1,34 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { BatchReviewResult } from '../../shared/types';
+import type { BatchReviewTaskSnapshot } from '../../shared/types';
 import BatchReviewPage from './BatchReviewPage';
 
 describe('BatchReviewPage', () => {
+  it('prefills invite code from the last used value and loads local default files', async () => {
+    window.localStorage.setItem('ai-homework-review:last-invite-code', 'stored-code');
+    const loadDefaultBatchFiles = vi.fn().mockResolvedValue({
+      inviteCode: 'demo-code',
+      answerPdf: new File(['pdf'], '智能停车场+2-9+班.pdf', {
+        type: 'application/pdf',
+      }),
+      rubricFile: new File(['rubric'], 'default.jpeg', {
+        type: 'image/jpeg',
+      }),
+    });
+
+    render(<BatchReviewPage loadDefaultBatchFiles={loadDefaultBatchFiles} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('当前已选择：智能停车场+2-9+班.pdf')).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('体验码')).toHaveValue('stored-code');
+    expect(loadDefaultBatchFiles).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    expect(screen.getByText('当前已选择：default.jpeg')).toBeInTheDocument();
+  });
+
   it('walks through the mobile wizard and submits a batch review task', async () => {
     const requestSession = vi.fn().mockResolvedValue({
       accessToken: 'token',
@@ -28,22 +53,13 @@ describe('BatchReviewPage', () => {
     const uploadFile = vi.fn().mockResolvedValue(undefined);
     const submitBatchReview = vi.fn().mockResolvedValue({
       taskId: 'batch-1',
+      status: 'queued',
       answerPdfObjectKey: 'uploads/answers.pdf',
       rubricObjectKey: 'uploads/rubric.pdf',
-      totalPages: 2,
-      pages: [],
-      summary: {
-        totalPages: 2,
-        averageScore: 7.5,
-        rows: [],
-        levelCounts: {
-          超出预期: 0,
-          达到预期: 1,
-          基本达到: 1,
-          待提升: 0,
-        },
-      },
-    } satisfies BatchReviewResult);
+      processedPages: 0,
+      createdAt: '2026-04-16T10:00:00.000Z',
+      updatedAt: '2026-04-16T10:00:00.000Z',
+    } satisfies BatchReviewTaskSnapshot);
 
     render(
       <BatchReviewPage

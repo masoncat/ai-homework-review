@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { readConfig } from './config.js';
+import { createBatchReviewTaskStore } from './lib/batchReviewTaskStore.js';
 import { corsHeaders, withCors } from './lib/cors.js';
 import { createObjectStoreFromConfig } from './lib/objectStore.js';
 import { createMemoryRateLimitStore } from './lib/rateLimit.js';
@@ -9,7 +10,7 @@ import { createBatchReviewProvider } from './lib/batchVisionProvider.js';
 import { createTeachingProvider } from './lib/teachingProvider.js';
 import { createVisionProvider } from './lib/visionProvider.js';
 import authRoute from './routes/auth.js';
-import batchReviewRoute from './routes/batchReview.js';
+import { createBatchReviewRoute } from './routes/batchReview.js';
 import gradeRoute from './routes/grade.js';
 import healthRoute from './routes/health.js';
 import uploadsRoute from './routes/uploads.js';
@@ -20,6 +21,13 @@ interface CreateAppOptions {
   visionProvider?: AppBindings['Variables']['visionProvider'];
   teachingProvider?: AppBindings['Variables']['teachingProvider'];
   batchReviewProvider?: AppBindings['Variables']['batchReviewProvider'];
+  createBatchReviewTaskStore?: (
+    objectStore: AppBindings['Variables']['objectStore']
+  ) => AppBindings['Variables']['batchReviewTaskStore'];
+  scheduleBatchReviewTask?: (
+    taskId: string,
+    run: () => Promise<void>
+  ) => void;
   objectStore?: AppBindings['Variables']['objectStore'];
   rateLimitStore?: AppBindings['Variables']['rateLimitStore'];
 }
@@ -34,6 +42,9 @@ export function createApp(options: CreateAppOptions = {}) {
     options.teachingProvider ?? createTeachingProvider(config);
   const batchReviewProvider =
     options.batchReviewProvider ?? createBatchReviewProvider(config, objectStore);
+  const batchReviewTaskStore =
+    options.createBatchReviewTaskStore?.(objectStore) ??
+    createBatchReviewTaskStore(objectStore);
   const rateLimitStore =
     options.rateLimitStore ?? createMemoryRateLimitStore();
 
@@ -42,6 +53,7 @@ export function createApp(options: CreateAppOptions = {}) {
     c.set('visionProvider', visionProvider);
     c.set('teachingProvider', teachingProvider);
     c.set('batchReviewProvider', batchReviewProvider);
+    c.set('batchReviewTaskStore', batchReviewTaskStore);
     c.set('objectStore', objectStore);
     c.set('objectStoreRuntimeContext', readObjectStoreRuntimeContext(c.req.raw));
     c.set('rateLimitStore', rateLimitStore);
@@ -53,7 +65,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.route('/auth', authRoute);
   app.route('/uploads', uploadsRoute);
   app.route('/grade', gradeRoute);
-  app.route('/batch-review', batchReviewRoute);
+  app.route(
+    '/batch-review',
+    createBatchReviewRoute({
+      scheduleBatchReviewTask: options.scheduleBatchReviewTask,
+    })
+  );
   app.route('/health', healthRoute);
   app.options('*', (c) =>
     c.body(null, 204, corsHeaders(c.req.header('origin'), c.get('config')))

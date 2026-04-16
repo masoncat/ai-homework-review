@@ -1,6 +1,6 @@
-import { startTransition, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import type {
-  BatchReviewResult,
+  BatchReviewTaskSnapshot,
   SessionResponse,
   UploadPolicyResponse,
 } from '../../shared/types';
@@ -8,11 +8,14 @@ import BatchReviewWizard from '../components/BatchReviewWizard';
 import {
   requestSession as defaultRequestSession,
   requestUploadPolicy as defaultRequestUploadPolicy,
+  requestDevDefaultBatchFiles as defaultLoadDefaultBatchFiles,
   submitBatchReview as defaultSubmitBatchReview,
   uploadFileWithPolicy as defaultUploadFile,
 } from '../lib/api';
-import { saveLatestBatchReviewResult } from '../lib/demoSession';
+import { saveLatestBatchReviewTaskSession } from '../lib/demoSession';
 import { isApiConfigured } from '../lib/env';
+
+const INVITE_CODE_STORAGE_KEY = 'ai-homework-review:last-invite-code';
 
 function readInviteCodeFromUrl(location: Location = window.location) {
   const pageQueryInviteCode = new URLSearchParams(location.search)
@@ -36,6 +39,10 @@ function readInviteCodeFromUrl(location: Location = window.location) {
   );
 }
 
+function readStoredInviteCode(storage: Storage = window.localStorage) {
+  return storage.getItem(INVITE_CODE_STORAGE_KEY)?.trim() ?? '';
+}
+
 export interface BatchReviewPageProps {
   requestSession?: (input: {
     inviteCode: string;
@@ -54,7 +61,12 @@ export interface BatchReviewPageProps {
     accessToken: string;
     answerPdfObjectKey: string;
     rubricObjectKey: string;
-  }) => Promise<BatchReviewResult>;
+  }) => Promise<BatchReviewTaskSnapshot>;
+  loadDefaultBatchFiles?: () => Promise<{
+    inviteCode: string;
+    answerPdf: File;
+    rubricFile: File;
+  }>;
 }
 
 export default function BatchReviewPage({
@@ -62,13 +74,54 @@ export default function BatchReviewPage({
   requestUploadPolicy = defaultRequestUploadPolicy,
   uploadFile = defaultUploadFile,
   submitBatchReview = defaultSubmitBatchReview,
+  loadDefaultBatchFiles = defaultLoadDefaultBatchFiles,
 }: BatchReviewPageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [inviteCode, setInviteCode] = useState(() => readInviteCodeFromUrl());
+  const [inviteCode, setInviteCode] = useState(() => {
+    const inviteCodeFromUrl = readInviteCodeFromUrl();
+
+    return inviteCodeFromUrl || readStoredInviteCode();
+  });
   const [answerPdf, setAnswerPdf] = useState<File | null>(null);
   const [rubricFile, setRubricFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    if (!inviteCode.trim()) {
+      return;
+    }
+
+    window.localStorage.setItem(INVITE_CODE_STORAGE_KEY, inviteCode.trim());
+  }, [inviteCode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateDefaultBatchFiles() {
+      try {
+        const defaults = await loadDefaultBatchFiles();
+
+        if (cancelled) {
+          return;
+        }
+
+        setInviteCode((currentValue) =>
+          currentValue.trim() ? currentValue : defaults.inviteCode
+        );
+        setAnswerPdf((currentFile) => currentFile ?? defaults.answerPdf);
+        setRubricFile((currentFile) => currentFile ?? defaults.rubricFile);
+      } catch {
+        // Local-dev convenience only. Ignore when fixtures are unavailable.
+      }
+    }
+
+    void hydrateDefaultBatchFiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDefaultBatchFiles]);
 
   const canUseApi =
     isApiConfigured() ||
@@ -141,16 +194,19 @@ export default function BatchReviewPage({
       );
       await uploadFile(rubricFile, rubricPolicy, session.accessToken);
 
-      const result = await submitBatchReview({
+      const task = await submitBatchReview({
         accessToken: session.accessToken,
         answerPdfObjectKey: answerPolicy.objectKey,
         rubricObjectKey: rubricPolicy.objectKey,
       });
 
-      saveLatestBatchReviewResult(result);
+      saveLatestBatchReviewTaskSession({
+        task,
+        accessToken: session.accessToken,
+      });
 
       startTransition(() => {
-        window.location.hash = `#/batch-review/result/${result.taskId}`;
+        window.location.hash = `#/batch-review/result/${task.taskId}`;
       });
     } catch (error) {
       setErrorMessage(

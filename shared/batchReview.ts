@@ -1,7 +1,9 @@
 import {
   BatchReviewLevel,
+  BatchReviewResult,
   BatchReviewPageResult,
   BatchReviewSummary,
+  BatchReviewTaskSnapshot,
 } from './types';
 
 const BATCH_REVIEW_LEVELS: BatchReviewLevel[] = [
@@ -10,6 +12,23 @@ const BATCH_REVIEW_LEVELS: BatchReviewLevel[] = [
   '基本达到',
   '待提升',
 ];
+
+export function normalizeBatchReviewScore(input: number): number {
+  if (!Number.isFinite(input)) {
+    return 0;
+  }
+
+  let normalized = input;
+
+  if (normalized > 10 && normalized <= 100) {
+    normalized = normalized / 10;
+  }
+
+  normalized = Math.max(0, Math.min(10, normalized));
+  normalized = Math.round(normalized * 2) / 2;
+
+  return parseFloat(normalized.toFixed(1));
+}
 
 export function normalizeBatchReviewLevel(input: string): BatchReviewLevel {
   const cleaned = (input ?? '').trim();
@@ -41,11 +60,12 @@ export function buildBatchReviewSummary(pages: BatchReviewPageResult[]): BatchRe
   let sumScore = 0;
   const rows = pages.map((page) => {
     const level = normalizeBatchReviewLevel(page.level);
-    sumScore += page.score;
+    const score = normalizeBatchReviewScore(page.score);
+    sumScore += score;
     return {
       pageNo: page.pageNo,
       displayName: page.displayName,
-      score: page.score,
+      score,
       level,
       summary: page.summary,
     };
@@ -74,4 +94,69 @@ export function buildBatchReviewSummary(pages: BatchReviewPageResult[]): BatchRe
     rows,
     levelCounts,
   };
+}
+
+export function sortBatchReviewPages(
+  pages: BatchReviewPageResult[]
+): BatchReviewPageResult[] {
+  return [...pages].sort((left, right) => left.pageNo - right.pageNo);
+}
+
+export function mergeBatchReviewPages(
+  basePages: BatchReviewPageResult[],
+  updatedPages: BatchReviewPageResult[]
+): BatchReviewPageResult[] {
+  const merged = new Map<number, BatchReviewPageResult>();
+
+  for (const page of basePages) {
+    merged.set(page.pageNo, page);
+  }
+
+  for (const page of updatedPages) {
+    merged.set(page.pageNo, page);
+  }
+
+  return sortBatchReviewPages([...merged.values()]);
+}
+
+export function buildBatchReviewResult(
+  input: Pick<BatchReviewResult, 'taskId' | 'answerPdfObjectKey' | 'rubricObjectKey'>,
+  pages: BatchReviewPageResult[],
+  totalPages = pages.length
+): BatchReviewResult {
+  const sortedPages = sortBatchReviewPages(pages);
+
+  return {
+    taskId: input.taskId,
+    answerPdfObjectKey: input.answerPdfObjectKey,
+    rubricObjectKey: input.rubricObjectKey,
+    totalPages,
+    pages: sortedPages,
+    summary: buildBatchReviewSummary(sortedPages),
+  };
+}
+
+export function getPendingBatchReviewPageNos(
+  task: Pick<
+    BatchReviewTaskSnapshot,
+    'pendingPageNos' | 'totalPages' | 'processedPages' | 'result'
+  >
+): number[] {
+  if (task.pendingPageNos?.length) {
+    return [...task.pendingPageNos].sort((left, right) => left - right);
+  }
+
+  const totalPages = task.totalPages ?? task.result?.totalPages ?? 0;
+
+  if (totalPages <= 0) {
+    return [];
+  }
+
+  const completedPageNos = new Set(
+    (task.result?.pages ?? []).map((page) => page.pageNo)
+  );
+
+  return Array.from({ length: totalPages }, (_, index) => index + 1).filter(
+    (pageNo) => !completedPageNos.has(pageNo)
+  );
 }

@@ -1,5 +1,6 @@
 import type {
   BatchReviewResult,
+  BatchReviewTaskSnapshot,
   GradeResponse,
   SessionResponse,
   UploadPolicyResponse,
@@ -22,6 +23,12 @@ export interface BatchReviewInput {
   accessToken: string;
   answerPdfObjectKey: string;
   rubricObjectKey: string;
+}
+
+export interface DevDefaultBatchFiles {
+  inviteCode: string;
+  answerPdf: File;
+  rubricFile: File;
 }
 
 function resolveOssClientEndpoint(endpoint: string, bucket: string) {
@@ -208,7 +215,7 @@ export async function submitGrade(input: GradeInput): Promise<GradeResponse> {
 
 export async function submitBatchReview(
   input: BatchReviewInput
-): Promise<BatchReviewResult> {
+): Promise<BatchReviewTaskSnapshot> {
   const res = await fetch(resolveUrl('/batch-review'), {
     method: 'POST',
     headers: {
@@ -226,4 +233,86 @@ export async function submitBatchReview(
   }
 
   return res.json();
+}
+
+export async function requestBatchReviewTask(
+  accessToken: string,
+  taskId: string
+): Promise<BatchReviewTaskSnapshot> {
+  const res = await fetch(resolveUrl(`/batch-review/${taskId}`), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error('获取批量批改任务状态失败');
+  }
+
+  return res.json();
+}
+
+export async function retryBatchReviewTask(
+  accessToken: string,
+  taskId: string,
+  pageNos?: number[]
+): Promise<BatchReviewTaskSnapshot> {
+  const res = await fetch(resolveUrl(`/batch-review/${taskId}/retry`), {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(
+      pageNos?.length ? { pageNos } : {}
+    ),
+  });
+
+  if (!res.ok) {
+    throw new Error('发起批量重批失败');
+  }
+
+  return res.json();
+}
+
+export async function requestDevDefaultBatchFiles(): Promise<DevDefaultBatchFiles> {
+  const manifestRes = await fetch(resolveUrl('/uploads/dev-default-batch-assets'));
+
+  if (!manifestRes.ok) {
+    throw new Error('当前未提供默认测试文件');
+  }
+
+  const manifest = (await manifestRes.json()) as {
+    inviteCode: string;
+    answerPdf: { fileName: string; url: string };
+    rubricFile: { fileName: string; url: string };
+  };
+
+  const [answerPdfBlob, rubricFileBlob] = await Promise.all([
+    fetch(manifest.answerPdf.url).then(async (response) => {
+      if (!response.ok) {
+        throw new Error('读取默认班级答案 PDF 失败');
+      }
+
+      return response.blob();
+    }),
+    fetch(manifest.rubricFile.url).then(async (response) => {
+      if (!response.ok) {
+        throw new Error('读取默认评分标准材料失败');
+      }
+
+      return response.blob();
+    }),
+  ]);
+
+  return {
+    inviteCode: manifest.inviteCode,
+    answerPdf: new File([answerPdfBlob], manifest.answerPdf.fileName, {
+      type: answerPdfBlob.type || 'application/pdf',
+    }),
+    rubricFile: new File([rubricFileBlob], manifest.rubricFile.fileName, {
+      type: rubricFileBlob.type || 'application/octet-stream',
+    }),
+  };
 }

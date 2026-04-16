@@ -2,15 +2,21 @@ import type { BatchReviewSummary as BatchReviewSummaryData } from '../../shared/
 
 interface BatchSummaryProps {
   summary: BatchReviewSummaryData;
+  selectedPageNo?: number | null;
+  onSelectPage?: (pageNo: number) => void;
 }
 
-export default function BatchSummary({ summary }: BatchSummaryProps) {
+export default function BatchSummary({
+  summary,
+  selectedPageNo = null,
+  onSelectPage,
+}: BatchSummaryProps) {
   return (
     <section className="result-section batch-summary-panel">
       <div className="section-heading">
         <p className="eyebrow">班级总览</p>
         <h2>平均分 {summary.averageScore}</h2>
-        <p>共处理 {summary.totalPages} 份答案，按老师批注风格输出等级和一句话问题。</p>
+        <p>共处理 {summary.totalPages} 份答案。总览区高度固定，点击卡片可直接查看对应详情。</p>
       </div>
 
       <div className="batch-summary-grid">
@@ -34,14 +40,23 @@ export default function BatchSummary({ summary }: BatchSummaryProps) {
 
       <div className="summary-table" aria-label="班级汇总列表">
         {summary.rows.map((row) => (
-          <article className="summary-row-card" key={row.pageNo}>
+          <button
+            key={row.pageNo}
+            type="button"
+            className={`summary-row-card summary-row-button ${
+              selectedPageNo === row.pageNo ? 'selected' : ''
+            }`}
+            aria-pressed={selectedPageNo === row.pageNo}
+            aria-label={`${row.displayName} ${row.level} 得分 ${row.score}`}
+            onClick={() => onSelectPage?.(row.pageNo)}
+          >
             <div className="summary-row-meta">
               <strong>{row.displayName}</strong>
               <span>{row.level}</span>
             </div>
             <div className="summary-row-score">得分 {row.score}</div>
             <p>{row.summary}</p>
-          </article>
+          </button>
         ))}
       </div>
     </section>

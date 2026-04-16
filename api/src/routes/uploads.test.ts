@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
 import { createOssObjectStore } from '../lib/objectStore.js';
@@ -168,5 +171,52 @@ describe('PUT /uploads/direct/*', () => {
       'image/png',
       undefined
     );
+  });
+});
+
+describe('GET /uploads/dev-default-batch-assets*', () => {
+  it('returns local-dev default batch asset manifest and file bytes', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'batch-default-assets-'));
+    const answerPdfPath = join(dir, 'answers.pdf');
+    const rubricFilePath = join(dir, 'default.jpeg');
+    await writeFile(answerPdfPath, 'mock-pdf');
+    await writeFile(rubricFilePath, 'mock-jpeg');
+
+    const previousAnswerPdfPath = process.env.DEV_DEFAULT_BATCH_ANSWER_PDF_PATH;
+    const previousRubricFilePath = process.env.DEV_DEFAULT_BATCH_RUBRIC_FILE_PATH;
+    const previousInviteCode = process.env.DEV_DEFAULT_BATCH_INVITE_CODE;
+
+    process.env.DEV_DEFAULT_BATCH_ANSWER_PDF_PATH = answerPdfPath;
+    process.env.DEV_DEFAULT_BATCH_RUBRIC_FILE_PATH = rubricFilePath;
+    process.env.DEV_DEFAULT_BATCH_INVITE_CODE = 'demo-code';
+
+    try {
+      const manifestResponse = await app.request(
+        'http://127.0.0.1:8787/uploads/dev-default-batch-assets'
+      );
+
+      expect(manifestResponse.status).toBe(200);
+      const manifest = (await manifestResponse.json()) as {
+        inviteCode: string;
+        answerPdf: { fileName: string; url: string };
+        rubricFile: { fileName: string; url: string };
+      };
+
+      expect(manifest.inviteCode).toBe('demo-code');
+      expect(manifest.answerPdf.fileName).toBe('answers.pdf');
+      expect(manifest.rubricFile.fileName).toBe('default.jpeg');
+
+      const answerResponse = await app.request(manifest.answerPdf.url);
+      const rubricResponse = await app.request(manifest.rubricFile.url);
+
+      expect(answerResponse.status).toBe(200);
+      expect(rubricResponse.status).toBe(200);
+      expect(await answerResponse.text()).toBe('mock-pdf');
+      expect(await rubricResponse.text()).toBe('mock-jpeg');
+    } finally {
+      process.env.DEV_DEFAULT_BATCH_ANSWER_PDF_PATH = previousAnswerPdfPath;
+      process.env.DEV_DEFAULT_BATCH_RUBRIC_FILE_PATH = previousRubricFilePath;
+      process.env.DEV_DEFAULT_BATCH_INVITE_CODE = previousInviteCode;
+    }
   });
 });

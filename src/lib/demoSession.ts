@@ -2,12 +2,13 @@ import { gradeSubmission } from '../../shared/grading';
 import type {
   AnswerKeyItem,
   BatchReviewResult,
+  BatchReviewTaskSnapshot,
   GradeResponse,
   RecognizedAnswer,
 } from '../../shared/types';
 
 const STORAGE_KEY = 'ai-homework-review:last-result';
-const BATCH_STORAGE_KEY = 'ai-homework-review:last-batch-result';
+const BATCH_STORAGE_KEY = 'ai-homework-review:last-batch-task';
 
 function rotateChoice(answer: string) {
   const order = ['A', 'B', 'C', 'D'];
@@ -76,11 +77,18 @@ export function loadLatestGradeResponse(): GradeResponse | null {
   }
 }
 
-export function saveLatestBatchReviewResult(result: BatchReviewResult) {
-  sessionStorage.setItem(BATCH_STORAGE_KEY, JSON.stringify(result));
+export interface BatchReviewTaskSession {
+  task: BatchReviewTaskSnapshot;
+  accessToken: string;
 }
 
-export function loadLatestBatchReviewResult(): BatchReviewResult | null {
+export function saveLatestBatchReviewTaskSession(
+  session: BatchReviewTaskSession
+) {
+  sessionStorage.setItem(BATCH_STORAGE_KEY, JSON.stringify(session));
+}
+
+export function loadLatestBatchReviewTaskSession(): BatchReviewTaskSession | null {
   const raw = sessionStorage.getItem(BATCH_STORAGE_KEY);
 
   if (!raw) {
@@ -88,7 +96,7 @@ export function loadLatestBatchReviewResult(): BatchReviewResult | null {
   }
 
   try {
-    return JSON.parse(raw) as BatchReviewResult;
+    return JSON.parse(raw) as BatchReviewTaskSession;
   } catch {
     return null;
   }
