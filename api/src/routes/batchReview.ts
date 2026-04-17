@@ -6,7 +6,10 @@ import {
   getPendingBatchReviewPageNos,
   mergeBatchReviewPages,
 } from '../../../shared/batchReview.js';
-import type { BatchReviewPageResult, BatchReviewTaskSnapshot } from '../../../shared/types.js';
+import type {
+  BatchReviewPageResult,
+  BatchReviewTaskSnapshot,
+} from '../../../shared/types.js';
 import { assertRateLimit } from '../lib/rateLimit.js';
 import { verifyToken } from '../lib/token.js';
 import type { AppBindings } from '../types.js';
@@ -18,6 +21,7 @@ const batchReviewBodySchema = z.object({
 const batchReviewRetryBodySchema = z.object({
   pageNos: z.array(z.number().int().positive()).optional(),
 });
+const BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE = 2;
 
 function nowIso() {
   return new Date().toISOString();
@@ -108,13 +112,84 @@ function resolveRetryPageNos(task: BatchReviewTaskSnapshot, requestedPageNos?: n
   return undefined;
 }
 
+function canPreparePollDrivenBatchReview(
+  provider: AppBindings['Variables']['batchReviewProvider']
+) {
+  return (
+    typeof provider.prepareBatchPages === 'function' &&
+    typeof provider.reviewPreparedBatchPages === 'function'
+  );
+}
+
+function canReviewPreparedBatchPages(
+  provider: AppBindings['Variables']['batchReviewProvider']
+) {
+  return typeof provider.reviewPreparedBatchPages === 'function';
+}
+
+async function initializeBatchReviewTask(
+  c: {
+    get: <TKey extends keyof AppBindings['Variables']>(
+      key: TKey
+    ) => AppBindings['Variables'][TKey];
+  },
+  task: BatchReviewTaskSnapshot
+) {
+  const provider = c.get('batchReviewProvider');
+
+  if (!canPreparePollDrivenBatchReview(provider)) {
+    return task;
+  }
+
+  const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
+  const taskStore = c.get('batchReviewTaskStore');
+  const prepareBatchPages = provider.prepareBatchPages;
+  const preparedPages =
+    task.preparedPages?.length && task.totalPages
+      ? task.preparedPages
+      : await prepareBatchPages!(
+          {
+            answerPdfObjectKey: task.answerPdfObjectKey,
+            rubricObjectKey: task.rubricObjectKey,
+          },
+          {
+            objectStoreRuntime: runtime,
+          }
+        );
+  const totalPages = task.totalPages ?? preparedPages.length;
+  const pendingPageNos = getPendingBatchReviewPageNos({
+    ...task,
+    totalPages,
+  });
+  const nextTask: BatchReviewTaskSnapshot = {
+    ...task,
+    status:
+      pendingPageNos.length > 0
+        ? 'processing'
+        : task.status === 'failed'
+          ? 'failed'
+          : 'completed',
+    totalPages,
+    pendingPageNos: pendingPageNos.length > 0 ? pendingPageNos : undefined,
+    preparedPages,
+    updatedAt: nowIso(),
+  };
+
+  await taskStore.saveTask(nextTask, runtime);
+
+  return nextTask;
+}
+
 async function processBatchReviewTask(
   c: {
     get: <TKey extends keyof AppBindings['Variables']>(
       key: TKey
     ) => AppBindings['Variables'][TKey];
   },
-  taskId: string
+  taskId: string,
+  options?: {
+    pageNos?: number[];
+  }
 ) {
   const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
   const taskStore = c.get('batchReviewTaskStore');
@@ -128,7 +203,19 @@ async function processBatchReviewTask(
     return;
   }
 
-  const targetPageNos = uniqueSortedPageNos(currentTask.pendingPageNos ?? []);
+  const allPendingPageNos = uniqueSortedPageNos(
+    currentTask.pendingPageNos ?? getPendingBatchReviewPageNos(currentTask)
+  );
+  const targetPageNos = uniqueSortedPageNos(
+    options?.pageNos?.length ? options.pageNos : allPendingPageNos
+  );
+  const useLegacyWholeBatchRun =
+    targetPageNos.length === 0 && !currentTask.preparedPages?.length;
+
+  if (targetPageNos.length === 0 && !useLegacyWholeBatchRun) {
+    return;
+  }
+
   const retainedPages = filterRetainedPages(
     currentTask.result?.pages,
     targetPageNos.length > 0 ? targetPageNos : undefined
@@ -156,74 +243,115 @@ async function processBatchReviewTask(
   );
 
   try {
-    const providerResult = await c.get('batchReviewProvider').reviewBatch(
-      {
-        answerPdfObjectKey: currentTask.answerPdfObjectKey,
-        rubricObjectKey: currentTask.rubricObjectKey,
-      },
-      {
-        objectStoreRuntime: runtime,
-        pageNos: targetPageNos.length > 0 ? targetPageNos : undefined,
-        onProgress: async (progress) => {
-          const resolvedTaskTotalPages =
-            totalPages > 0 ? totalPages : progress.totalPages;
-          const mergedPages = mergeBatchReviewPages(
-            retainedPages,
-            progress.result?.pages ?? []
-          );
-          const remainingPageNos =
-            targetPageNos.length > 0
-              ? targetPageNos.filter(
-                  (pageNo) =>
-                    !progress.result?.pages.some((page) => page.pageNo === pageNo)
-                )
-              : undefined;
+    const provider = c.get('batchReviewProvider');
+    const providerInput = {
+      answerPdfObjectKey: currentTask.answerPdfObjectKey,
+      rubricObjectKey: currentTask.rubricObjectKey,
+    };
+    const providerOptions = {
+      objectStoreRuntime: runtime,
+      pageNos: targetPageNos.length > 0 ? targetPageNos : undefined,
+      onProgress: async (progress: {
+        totalPages: number;
+        processedPages: number;
+        result?: { pages: BatchReviewPageResult[] };
+      }) => {
+        const resolvedTaskTotalPages =
+          totalPages > 0 ? totalPages : progress.totalPages;
+        const mergedPages = mergeBatchReviewPages(
+          retainedPages,
+          progress.result?.pages ?? []
+        );
+        const completedPageNos = new Set(
+          (progress.result?.pages ?? []).map((page) => page.pageNo)
+        );
+        const remainingPageNos =
+          allPendingPageNos.length > 0
+            ? allPendingPageNos.filter((pageNo) => !completedPageNos.has(pageNo))
+            : undefined;
 
-          await taskStore.saveTask(
-            {
-              ...currentTask,
-              status: 'processing',
-              totalPages: resolvedTaskTotalPages,
-              processedPages: mergedPages.length,
-              pendingPageNos: remainingPageNos?.length ? remainingPageNos : undefined,
-              updatedAt: nowIso(),
-              errorMessage: undefined,
-              result:
-                mergedPages.length > 0
-                  ? buildMergedTaskResult(
-                      currentTask,
-                      mergedPages,
-                      mergedPages.length
-                    )
-                  : undefined,
-            },
-            runtime
-          );
-        },
-      }
-    );
+        await taskStore.saveTask(
+          {
+            ...currentTask,
+            status:
+              remainingPageNos && remainingPageNos.length === 0
+                ? 'completed'
+                : 'processing',
+            totalPages: resolvedTaskTotalPages,
+            processedPages: mergedPages.length,
+            pendingPageNos:
+              remainingPageNos && remainingPageNos.length > 0
+                ? remainingPageNos
+                : undefined,
+            updatedAt: nowIso(),
+            errorMessage: undefined,
+            result:
+              mergedPages.length > 0
+                ? buildMergedTaskResult(
+                    currentTask,
+                    mergedPages,
+                    mergedPages.length
+                  )
+                : undefined,
+          },
+          runtime
+        );
+      },
+    };
+    const providerResult =
+      currentTask.preparedPages?.length &&
+      provider.reviewPreparedBatchPages &&
+      canReviewPreparedBatchPages(provider)
+        ? await provider.reviewPreparedBatchPages(providerInput, {
+            ...providerOptions,
+            preparedPages: currentTask.preparedPages,
+          })
+        : await provider.reviewBatch(providerInput, providerOptions);
+    const latestTask =
+      (await taskStore.getTask(taskId, runtime)) ?? currentTask;
     const result = {
       ...providerResult,
       taskId: currentTask.taskId,
     };
-    const mergedPages = mergeBatchReviewPages(retainedPages, result.pages);
-    const resolvedProcessedPages = Math.max(
-      mergedPages.length,
-      totalPages || result.totalPages || 0
+    const mergedPages = mergeBatchReviewPages(
+      latestTask.result?.pages ?? retainedPages,
+      result.pages
     );
+    const completedPageNos = new Set(result.pages.map((page) => page.pageNo));
+    const remainingPageNos =
+      allPendingPageNos.length > 0
+        ? allPendingPageNos.filter((pageNo) => !completedPageNos.has(pageNo))
+        : undefined;
+    const nextStatus =
+      remainingPageNos && remainingPageNos.length > 0
+        ? 'processing'
+        : 'completed';
+    const resolvedProcessedPages =
+      nextStatus === 'completed'
+        ? Math.max(
+            mergedPages.length,
+            latestTask.processedPages,
+            totalPages || result.totalPages || 0
+          )
+        : mergedPages.length;
 
     await taskStore.saveTask(
       {
-        ...currentTask,
-        status: 'completed',
+        ...latestTask,
+        status: nextStatus,
         totalPages: totalPages || result.totalPages || mergedPages.length,
         processedPages: resolvedProcessedPages,
-        pendingPageNos: undefined,
+        pendingPageNos:
+          remainingPageNos && remainingPageNos.length > 0
+            ? remainingPageNos
+            : undefined,
         updatedAt: nowIso(),
         result: buildMergedTaskResult(
           currentTask,
           mergedPages,
-          totalPages || result.totalPages || mergedPages.length
+          nextStatus === 'completed'
+            ? totalPages || result.totalPages || mergedPages.length
+            : mergedPages.length
         ),
       },
       runtime
@@ -242,8 +370,8 @@ async function processBatchReviewTask(
         pendingPageNos:
           latestTask.pendingPageNos?.length
             ? latestTask.pendingPageNos
-            : targetPageNos.length > 0
-              ? targetPageNos
+            : allPendingPageNos.length > 0
+              ? allPendingPageNos
               : undefined,
         updatedAt: nowIso(),
         errorMessage: toTaskErrorMessage(error),
@@ -311,8 +439,14 @@ export function createBatchReviewRoute(options: {
       updatedAt: nowIso(),
     };
     const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
+    const taskStore = c.get('batchReviewTaskStore');
 
-    await c.get('batchReviewTaskStore').saveTask(task, runtime);
+    await taskStore.saveTask(task, runtime);
+
+    if (canPreparePollDrivenBatchReview(c.get('batchReviewProvider'))) {
+      const initializedTask = await initializeBatchReviewTask(c, task);
+      return c.json(initializedTask, 202);
+    }
 
     scheduleBatchReviewTask(task.taskId, async () => {
       await processBatchReviewTask(c, task.taskId);
@@ -335,15 +469,27 @@ export function createBatchReviewRoute(options: {
       throw new HTTPException(401, { message: '未登录或会话已失效' });
     }
 
-    const task = await c
-      .get('batchReviewTaskStore')
-      .getTask(
-        c.req.param('taskId'),
-        c.get('objectStoreRuntimeContext') ?? undefined
-      );
+    const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
+    const taskStore = c.get('batchReviewTaskStore');
+    let task = await taskStore.getTask(c.req.param('taskId'), runtime);
 
     if (!task) {
       throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    if (
+      canReviewPreparedBatchPages(c.get('batchReviewProvider')) &&
+      (task.status === 'queued' || task.status === 'processing')
+    ) {
+      task = await initializeBatchReviewTask(c, task);
+      const pendingPageNos = getPendingBatchReviewPageNos(task);
+
+      if (pendingPageNos.length > 0) {
+        await processBatchReviewTask(c, task.taskId, {
+          pageNos: pendingPageNos.slice(0, BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE),
+        });
+        task = (await taskStore.getTask(task.taskId, runtime)) ?? task;
+      }
     }
 
     return c.json(task);
@@ -380,7 +526,9 @@ export function createBatchReviewRoute(options: {
       (retryPageNos?.length ?? 0) + retainedPages.length;
     const nextTask: BatchReviewTaskSnapshot = {
       ...task,
-      status: 'queued',
+      status: canReviewPreparedBatchPages(c.get('batchReviewProvider'))
+        ? 'processing'
+        : 'queued',
       totalPages: totalPages || undefined,
       processedPages: retainedPages.length,
       pendingPageNos: retryPageNos,
@@ -396,9 +544,11 @@ export function createBatchReviewRoute(options: {
 
     await taskStore.saveTask(nextTask, runtime);
 
-    scheduleBatchReviewTask(task.taskId, async () => {
-      await processBatchReviewTask(c, task.taskId);
-    });
+    if (!canReviewPreparedBatchPages(c.get('batchReviewProvider'))) {
+      scheduleBatchReviewTask(task.taskId, async () => {
+        await processBatchReviewTask(c, task.taskId);
+      });
+    }
 
     return c.json(nextTask, 202);
   });

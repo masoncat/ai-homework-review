@@ -75,6 +75,12 @@ export interface BatchReviewPageResult {
   suggestions: string[];
 }
 
+export interface BatchReviewPreparedPage {
+  pageNo: number;
+  objectKey: string;
+  contentType: string;
+}
+
 export interface BatchReviewSummaryRow {
   pageNo: number;
   displayName: string;
@@ -113,6 +119,7 @@ export interface BatchReviewTaskSnapshot {
   totalPages?: number;
   processedPages: number;
   pendingPageNos?: number[];
+  preparedPages?: BatchReviewPreparedPage[];
   createdAt: string;
   updatedAt: string;
   errorMessage?: string;

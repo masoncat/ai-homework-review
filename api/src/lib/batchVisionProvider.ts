@@ -7,6 +7,7 @@ import {
   normalizeBatchReviewScore,
 } from '../../../shared/batchReview.js';
 import type {
+  BatchReviewPreparedPage,
   BatchReviewPageResult,
   BatchReviewResult,
 } from '../../../shared/types.js';
@@ -26,6 +27,23 @@ export interface BatchReviewInput {
 }
 
 export interface BatchReviewProvider {
+  prepareBatchPages?: (
+    input: BatchReviewInput,
+    options?: {
+      objectStoreRuntime?: ObjectStoreRuntimeContext;
+    }
+  ) => Promise<BatchReviewPreparedPage[]>;
+  reviewPreparedBatchPages?: (
+    input: BatchReviewInput,
+    options: {
+      preparedPages: BatchReviewPreparedPage[];
+      objectStoreRuntime?: ObjectStoreRuntimeContext;
+      pageNos?: number[];
+      onProgress?: (
+        progress: BatchReviewProgressSnapshot
+      ) => Promise<void> | void;
+    }
+  ) => Promise<BatchReviewResult>;
   reviewBatch: (
     input: BatchReviewInput,
     options?: {
@@ -318,9 +336,116 @@ export function createBatchReviewProvider(
   pdfPageExtractor?: PdfPageExtractor,
   scorePage: ScorePageFn = scoreBatchReviewPage
 ): BatchReviewProvider {
+  async function reviewPreparedBatchPages(
+    input: BatchReviewInput,
+    preparedPages: BatchReviewPreparedPage[],
+    options?: {
+      objectStoreRuntime?: ObjectStoreRuntimeContext;
+      pageNos?: number[];
+      onProgress?: (
+        progress: BatchReviewProgressSnapshot
+      ) => Promise<void> | void;
+    }
+  ): Promise<BatchReviewResult> {
+    assertBatchVisionConfigured(config);
+    const pdfCapableObjectStore = requirePdfCapableObjectStore(objectStore);
+    const selectedPageNos = new Set(options?.pageNos ?? []);
+    const selectedPageObjects =
+      selectedPageNos.size > 0
+        ? preparedPages.filter((page) => selectedPageNos.has(page.pageNo))
+        : preparedPages;
+
+    const rubricBytes = await pdfCapableObjectStore.getObjectBytes(
+      input.rubricObjectKey,
+      options?.objectStoreRuntime
+    );
+    const rubricAiInput = toAiDataUrl(
+      rubricBytes,
+      resolveObjectContentType(input.rubricObjectKey, 'image/jpeg')
+    );
+    const progressPages = new Array<BatchReviewPageResult | undefined>(
+      selectedPageObjects.length
+    );
+    const completedPages: BatchReviewPageResult[] = [];
+    let processedPages = 0;
+    let progressChain = Promise.resolve();
+
+    const queueProgressUpdate = () => {
+      if (!options?.onProgress) {
+        return;
+      }
+      const progress: BatchReviewProgressSnapshot = {
+        totalPages: selectedPageObjects.length,
+        processedPages,
+        result:
+          completedPages.length > 0
+            ? buildBatchReviewResultSnapshot(input, completedPages)
+            : undefined,
+      };
+
+      progressChain = progressChain.then(async () => {
+        await options.onProgress?.(progress);
+      });
+    };
+
+    queueProgressUpdate();
+
+    const pages = await mapWithConcurrency(
+      selectedPageObjects,
+      BATCH_REVIEW_PAGE_CONCURRENCY,
+      async (page, index) => {
+        const pageDisplayUrl = await objectStore.getObjectAiInput(
+          page.objectKey,
+          options?.objectStoreRuntime
+        );
+        const pageBytes = await pdfCapableObjectStore.getObjectBytes(
+          page.objectKey,
+          options?.objectStoreRuntime
+        );
+        const pageInput = toAiDataUrl(
+          pageBytes,
+          resolveObjectContentType(page.objectKey, page.contentType)
+        );
+        const scored = await scorePage(config, {
+          pageInput,
+          rubricInput: rubricAiInput,
+        });
+
+        const pageResult = {
+          pageNo: page.pageNo,
+          displayName: `第 ${page.pageNo} 份`,
+          answerImageObjectKey: page.objectKey,
+          answerImageUrl: pageDisplayUrl,
+          score: normalizeBatchReviewScore(scored.score),
+          level: normalizeBatchReviewLevel(scored.level),
+          summary: scored.summary,
+          strengths: scored.strengths,
+          issues: scored.issues,
+          suggestions: scored.suggestions,
+        };
+
+        progressPages[index] = pageResult;
+        completedPages.push(pageResult);
+        processedPages += 1;
+        queueProgressUpdate();
+
+        return pageResult;
+      }
+    );
+    await progressChain;
+
+    return {
+      taskId: crypto.randomUUID(),
+      answerPdfObjectKey: input.answerPdfObjectKey,
+      rubricObjectKey: input.rubricObjectKey,
+      totalPages: completedPages.length,
+      pages,
+      summary: buildBatchReviewSummary(pages),
+    };
+  }
+
   return {
-    async reviewBatch(input, options) {
-      assertBatchVisionConfigured(config);
+    async prepareBatchPages(input, options) {
       const pdfCapableObjectStore = requirePdfCapableObjectStore(objectStore);
       const activePdfPageExtractor =
         pdfPageExtractor ??
@@ -328,104 +453,25 @@ export function createBatchReviewProvider(
           objectStore: pdfCapableObjectStore,
         });
 
-      const pageObjects = await activePdfPageExtractor.extractPages({
+      return activePdfPageExtractor.extractPages({
         answerPdfObjectKey: input.answerPdfObjectKey,
         outputPrefix: `derived/batch/${crypto.randomUUID()}`,
         runtime: options?.objectStoreRuntime,
       });
-      const selectedPageNos = new Set(options?.pageNos ?? []);
-      const selectedPageObjects =
-        selectedPageNos.size > 0
-          ? pageObjects.filter((page) => selectedPageNos.has(page.pageNo))
-          : pageObjects;
+    },
+    async reviewPreparedBatchPages(input, options) {
+      return reviewPreparedBatchPages(input, options.preparedPages, options);
+    },
+    async reviewBatch(input, options) {
+      const preparedPages = await this.prepareBatchPages?.(input, {
+        objectStoreRuntime: options?.objectStoreRuntime,
+      });
 
-      const rubricBytes = await pdfCapableObjectStore.getObjectBytes(
-        input.rubricObjectKey,
-        options?.objectStoreRuntime
-      );
-      const rubricAiInput = toAiDataUrl(
-        rubricBytes,
-        resolveObjectContentType(input.rubricObjectKey, 'image/jpeg')
-      );
-      const progressPages = new Array<BatchReviewPageResult | undefined>(
-        selectedPageObjects.length
-      );
-      const completedPages: BatchReviewPageResult[] = [];
-      let processedPages = 0;
-      let progressChain = Promise.resolve();
+      if (!preparedPages) {
+        throw new Error('批量批改未提供可用的 PDF 拆页能力');
+      }
 
-      const queueProgressUpdate = () => {
-        if (!options?.onProgress) {
-          return;
-        }
-        const progress: BatchReviewProgressSnapshot = {
-          totalPages: selectedPageObjects.length,
-          processedPages,
-          result:
-            completedPages.length > 0
-              ? buildBatchReviewResultSnapshot(input, completedPages)
-              : undefined,
-        };
-
-        progressChain = progressChain.then(async () => {
-          await options.onProgress?.(progress);
-        });
-      };
-
-      queueProgressUpdate();
-
-      const pages = await mapWithConcurrency(
-        selectedPageObjects,
-        BATCH_REVIEW_PAGE_CONCURRENCY,
-        async (page, index) => {
-          const pageDisplayUrl = await objectStore.getObjectAiInput(
-            page.objectKey,
-            options?.objectStoreRuntime
-          );
-          const pageBytes = await pdfCapableObjectStore.getObjectBytes(
-            page.objectKey,
-            options?.objectStoreRuntime
-          );
-          const pageInput = toAiDataUrl(
-            pageBytes,
-            resolveObjectContentType(page.objectKey, page.contentType)
-          );
-          const scored = await scorePage(config, {
-            pageInput,
-            rubricInput: rubricAiInput,
-          });
-
-          const pageResult = {
-            pageNo: page.pageNo,
-            displayName: `第 ${page.pageNo} 份`,
-            answerImageObjectKey: page.objectKey,
-            answerImageUrl: pageDisplayUrl,
-            score: normalizeBatchReviewScore(scored.score),
-            level: normalizeBatchReviewLevel(scored.level),
-            summary: scored.summary,
-            strengths: scored.strengths,
-            issues: scored.issues,
-            suggestions: scored.suggestions,
-          };
-
-          progressPages[index] = pageResult;
-          completedPages.push(pageResult);
-          processedPages += 1;
-          queueProgressUpdate();
-
-          return pageResult;
-        }
-      );
-      await progressChain;
-
-      return {
-        taskId: crypto.randomUUID(),
-        answerPdfObjectKey: input.answerPdfObjectKey,
-        rubricObjectKey: input.rubricObjectKey,
-        totalPages: completedPages.length,
-        pages,
-        summary: buildBatchReviewSummary(pages),
-      };
+      return reviewPreparedBatchPages(input, preparedPages, options);
     },
   };
 }
