@@ -1,5 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPdfPageExtractor } from './pdfPageExtractor.js';
+
+afterEach(() => {
+  vi.resetModules();
+  vi.unmock('pdfjs-dist/legacy/build/pdf.mjs');
+  vi.unmock('pdfjs-dist/legacy/build/pdf.worker.mjs');
+  vi.unmock('@napi-rs/canvas');
+  Reflect.deleteProperty(
+    globalThis as typeof globalThis & { pdfjsWorker?: unknown },
+    'pdfjsWorker'
+  );
+});
 
 describe('createPdfPageExtractor', () => {
   it('renders a PDF object into per-page image objects', async () => {
@@ -40,5 +51,30 @@ describe('createPdfPageExtractor', () => {
       'image/png',
       undefined
     );
+  });
+
+  it('registers the pdfjs worker handler globally for server runtimes', async () => {
+    const workerMessageHandler = { setup: vi.fn() };
+
+    vi.doMock('@napi-rs/canvas', () => ({
+      DOMMatrix: class DOMMatrix {},
+      ImageData: class ImageData {},
+      Path2D: class Path2D {},
+      createCanvas: vi.fn(),
+    }));
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+      getDocument: vi.fn(),
+    }));
+    vi.doMock('pdfjs-dist/legacy/build/pdf.worker.mjs', () => ({
+      WorkerMessageHandler: workerMessageHandler,
+    }));
+
+    await import('./pdfPageExtractor.js');
+
+    expect(
+      (globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker
+    ).toEqual({
+      WorkerMessageHandler: workerMessageHandler,
+    });
   });
 });

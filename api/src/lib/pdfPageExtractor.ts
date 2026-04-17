@@ -5,7 +5,14 @@ import {
   createCanvas,
 } from '@napi-rs/canvas';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import * as pdfjsWorkerModule from 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 import type { ObjectStoreRuntimeContext } from './objectStore.js';
+
+const globalWithPdfJsWorker = globalThis as typeof globalThis & {
+  pdfjsWorker?: {
+    WorkerMessageHandler: unknown;
+  };
+};
 
 export interface ExtractedPdfPage {
   pageNo: number;
@@ -57,6 +64,13 @@ if (!('ImageData' in globalThis)) {
 }
 if (!('Path2D' in globalThis)) {
   Object.assign(globalThis, { Path2D });
+}
+if (!globalWithPdfJsWorker.pdfjsWorker) {
+  Object.assign(globalWithPdfJsWorker, {
+    pdfjsWorker: {
+      WorkerMessageHandler: pdfjsWorkerModule.WorkerMessageHandler,
+    },
+  });
 }
 
 async function renderPdfPagesWithPdfJs(

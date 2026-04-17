@@ -6,7 +6,7 @@ const outdir = new URL('../bundle/', import.meta.url);
 await mkdir(outdir, { recursive: true });
 
 await build({
-  entryPoints: ['src/index.ts'],
+  entryPoints: ['src/fc-entry.ts'],
   bundle: true,
   external: ['@napi-rs/canvas', '@napi-rs/canvas-*'],
   platform: 'node',
