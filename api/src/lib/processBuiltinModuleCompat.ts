@@ -1,3 +1,4 @@
+import * as nodeModule from 'node:module';
 import { createRequire } from 'node:module';
 
 export function ensureProcessBuiltinModuleCompat() {
@@ -11,6 +12,19 @@ export function ensureProcessBuiltinModuleCompat() {
 
   process.getBuiltinModule = ((name: string) => {
     try {
+      if (name === 'module') {
+        return {
+          ...nodeModule,
+          createRequire: (filename?: string | URL) => {
+            if (filename) {
+              return createRequire(filename);
+            }
+
+            return localRequire;
+          },
+        };
+      }
+
       return localRequire(name);
     } catch {
       return undefined;
