@@ -244,7 +244,7 @@ function mapTaskSummary(row: BatchReviewTaskRow): BatchReviewTaskSummary {
     parentTaskId: row.parent_task_id ?? undefined,
     status:
       row.status === 'processing'
-        ? 'queued'
+        ? 'running'
         : row.status,
     totalPages: Number(row.total_pages ?? 0),
     processedPages: Number(row.processed_pages ?? 0),

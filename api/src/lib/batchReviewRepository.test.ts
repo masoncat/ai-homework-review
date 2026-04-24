@@ -89,6 +89,39 @@ describe('createBatchReviewRepository', () => {
     expect(transaction.rollback).toHaveBeenCalledTimes(1);
   });
 
+  it('maps legacy processing summaries to running', async () => {
+    const { db, repo } = createDb();
+    db.query.mockResolvedValueOnce([
+      [
+        {
+          id: 'task-processing',
+          session_invite_code: 'demo-code',
+          parent_task_id: null,
+          status: 'processing',
+          total_pages: 2,
+          processed_pages: 1,
+          succeeded_pages: 1,
+          failed_pages: 0,
+          pending_pages: 1,
+          retryable_page_count: 1,
+          summary_json: '{"text":"处理中"}',
+          created_at: '2026-04-25 02:00:00',
+          updated_at: '2026-04-25 02:05:00',
+        },
+      ],
+    ]);
+
+    const summaries = await repo.listTaskSummaries('demo-code', 7);
+
+    expect(summaries).toEqual([
+      expect.objectContaining({
+        taskId: 'task-processing',
+        status: 'running',
+        summary: '处理中',
+      }),
+    ]);
+  });
+
   it('loads task detail with parsed summary and ordered pages', async () => {
     const { db, repo } = createDb();
     db.query
