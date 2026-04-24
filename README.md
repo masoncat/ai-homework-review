@@ -41,9 +41,30 @@ API 本地运行会直接读取 `api/.env`。当前真实链路建议使用：
 - `TEXT_AI_MODEL=gpt-5.4`
 - `BATCH_VISION_AI_MODEL=qwen-vl-max-latest`
 
-前端会先向服务端请求 STS 临时凭证，再直传 OSS；批改阶段仍由服务端调用 OCR 和讲评模型。
+前端会先向服务端请求 STS 临时凭证，再直传 OSS；批改阶段仍由服务端调用 OCR、讲评模型和批量多模态模型。
 如果浏览器因 OSS CORS 或预检失败导致直传异常，当前前端会自动回退到后端代理上传，不影响完整验收。
 `api/.env` 仅用于本地和云端部署，不应提交到 GitHub。
+
+离线批量批改模式需要额外配置：
+
+```bash
+MYSQL_URL=mysql://user:pass@127.0.0.1:3306/ai_homework_review
+BATCH_REVIEW_EXECUTION_MODE=offline
+BATCH_WORKER_ID=batch-worker-local
+BATCH_WORKER_POLL_INTERVAL_MS=1500
+BATCH_REVIEW_TASK_LOOKBACK_DAYS=7
+```
+
+说明：
+
+- `inline`：沿用旧的请求内批量批改路径，主要用于兼容和回滚。
+- `offline`：批量任务写入 MySQL，由常驻 worker 逐页执行，并在 `#/batch-review` 展示任务中心。
+- 离线模式需要单独启动 worker：
+
+```bash
+cd api
+npm run worker
+```
 
 ## 测试与构建
 
@@ -79,5 +100,8 @@ cd api && npm run test && npm run build
 - `BATCH_VISION_AI_BASE_URL`
 - `BATCH_VISION_AI_API_KEY`
 - `BATCH_VISION_AI_MODEL`
+- `MYSQL_URL`
+- `BATCH_REVIEW_EXECUTION_MODE`
+- `BATCH_WORKER_ID`
 
-推荐优先使用阿里多模态模型 `qwen-vl-max-latest`。
+如果切离线模式，还需要常驻 worker 进程消费 MySQL 里的待处理任务。

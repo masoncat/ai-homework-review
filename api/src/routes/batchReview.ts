@@ -7,6 +7,7 @@ import {
   mergeBatchReviewPages,
 } from '../../../shared/batchReview.js';
 import type {
+  BatchReviewTaskSummary,
   BatchReviewPageResult,
   BatchReviewTaskSnapshot,
 } from '../../../shared/types.js';
@@ -25,6 +26,30 @@ const BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE = 2;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function buildQueuedTaskSummary(
+  taskId: string,
+  totalPages: number,
+  options: {
+    parentTaskId?: string;
+  } = {}
+): BatchReviewTaskSummary {
+  const timestamp = nowIso();
+
+  return {
+    taskId,
+    parentTaskId: options.parentTaskId,
+    status: 'queued',
+    totalPages,
+    processedPages: 0,
+    succeededPages: 0,
+    failedPages: 0,
+    summary: '等待处理',
+    hasRetryablePages: totalPages > 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 }
 
 function defaultScheduleBatchReviewTask(
@@ -125,6 +150,48 @@ function canReviewPreparedBatchPages(
   provider: AppBindings['Variables']['batchReviewProvider']
 ) {
   return typeof provider.reviewPreparedBatchPages === 'function';
+}
+
+async function requireBatchReviewSession(
+  c: {
+    req: {
+      header: (name: string) => string | undefined;
+    };
+    get: <TKey extends keyof AppBindings['Variables']>(
+      key: TKey
+    ) => AppBindings['Variables'][TKey];
+  }
+) {
+  const authHeader = c.req.header('authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+
+  if (!token) {
+    throw new HTTPException(401, { message: '未登录或会话已失效' });
+  }
+
+  try {
+    return await verifyToken(token, c.get('config'));
+  } catch {
+    throw new HTTPException(401, { message: '未登录或会话已失效' });
+  }
+}
+
+function requireOfflineRepository(
+  c: {
+    get: <TKey extends keyof AppBindings['Variables']>(
+      key: TKey
+    ) => AppBindings['Variables'][TKey];
+  }
+) {
+  const repository = c.get('batchReviewRepository');
+
+  if (!repository) {
+    throw new HTTPException(503, {
+      message: '离线批量任务仓储尚未完成配置',
+    });
+  }
+
+  return repository;
 }
 
 async function initializeBatchReviewTask(
@@ -392,19 +459,7 @@ export function createBatchReviewRoute(options: {
     options.scheduleBatchReviewTask ?? defaultScheduleBatchReviewTask;
 
   batchReviewRoute.post('/', async (c) => {
-    const authHeader = c.req.header('authorization') ?? '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-
-    if (!token) {
-      return c.json({ message: '未登录或会话已失效' }, 401);
-    }
-
-    let session;
-    try {
-      session = await verifyToken(token, c.get('config'));
-    } catch {
-      throw new HTTPException(401, { message: '未登录或会话已失效' });
-    }
+    const session = await requireBatchReviewSession(c);
 
     if (
       !c.get('config').batchVisionAiApiKey ||
@@ -429,6 +484,35 @@ export function createBatchReviewRoute(options: {
     }
 
     const body = batchReviewBodySchema.parse(await c.req.json());
+
+    if (c.get('config').batchReviewExecutionMode === 'offline') {
+      const provider = c.get('batchReviewProvider');
+
+      if (!provider.prepareBatchPages) {
+        throw new HTTPException(503, {
+          message: '离线批量批改尚未完成页面预处理能力配置',
+        });
+      }
+
+      const preparedPages = await provider.prepareBatchPages(body, {
+        objectStoreRuntime: c.get('objectStoreRuntimeContext') ?? undefined,
+      });
+      const pageNos = uniqueSortedPageNos(
+        preparedPages.map((page) => page.pageNo)
+      );
+      const taskId = crypto.randomUUID();
+
+      await requireOfflineRepository(c).createTask({
+        taskId,
+        inviteCode: session.inviteCode,
+        answerPdfObjectKey: body.answerPdfObjectKey,
+        rubricObjectKey: body.rubricObjectKey,
+        pageNos,
+      });
+
+      return c.json(buildQueuedTaskSummary(taskId, pageNos.length), 202);
+    }
+
     const task: BatchReviewTaskSnapshot = {
       taskId: crypto.randomUUID(),
       status: 'queued',
@@ -455,19 +539,93 @@ export function createBatchReviewRoute(options: {
     return c.json(task, 202);
   });
 
+  batchReviewRoute.get('/tasks', async (c) => {
+    if (c.get('config').batchReviewExecutionMode !== 'offline') {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    const session = await requireBatchReviewSession(c);
+    const repository = requireOfflineRepository(c);
+    const summaries = await repository.listTaskSummaries(
+      session.inviteCode,
+      c.get('config').batchReviewTaskLookbackDays
+    );
+
+    return c.json(summaries);
+  });
+
+  batchReviewRoute.get('/tasks/:taskId', async (c) => {
+    if (c.get('config').batchReviewExecutionMode !== 'offline') {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    const session = await requireBatchReviewSession(c);
+    const repository = requireOfflineRepository(c);
+    const detail = await repository.getTaskDetail(
+      c.req.param('taskId'),
+      session.inviteCode
+    );
+
+    if (!detail) {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    return c.json(detail);
+  });
+
+  batchReviewRoute.post('/tasks/:taskId/retry', async (c) => {
+    if (c.get('config').batchReviewExecutionMode !== 'offline') {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    const session = await requireBatchReviewSession(c);
+    batchReviewRetryBodySchema.parse(await c.req.json());
+    const repository = requireOfflineRepository(c);
+    const newTaskId = crypto.randomUUID();
+
+    await repository.createRetryChildTask({
+      parentTaskId: c.req.param('taskId'),
+      newTaskId,
+      inviteCode: session.inviteCode,
+    });
+
+    return c.json(
+      buildQueuedTaskSummary(newTaskId, 0, {
+        parentTaskId: c.req.param('taskId'),
+      }),
+      202
+    );
+  });
+
+  batchReviewRoute.get('/notifications', async (c) => {
+    if (c.get('config').batchReviewExecutionMode !== 'offline') {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    const session = await requireBatchReviewSession(c);
+    const notifications = await requireOfflineRepository(c).listNotifications(
+      session.inviteCode
+    );
+
+    return c.json(notifications);
+  });
+
+  batchReviewRoute.post('/notifications/:id/read', async (c) => {
+    if (c.get('config').batchReviewExecutionMode !== 'offline') {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    const session = await requireBatchReviewSession(c);
+    const ok = await requireOfflineRepository(c).markNotificationRead(
+      c.req.param('id'),
+      session.inviteCode
+    );
+
+    return c.json({ ok });
+  });
+
   batchReviewRoute.get('/:taskId', async (c) => {
-    const authHeader = c.req.header('authorization') ?? '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-
-    if (!token) {
-      return c.json({ message: '未登录或会话已失效' }, 401);
-    }
-
-    try {
-      await verifyToken(token, c.get('config'));
-    } catch {
-      throw new HTTPException(401, { message: '未登录或会话已失效' });
-    }
+    await requireBatchReviewSession(c);
 
     const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
     const taskStore = c.get('batchReviewTaskStore');
@@ -496,18 +654,7 @@ export function createBatchReviewRoute(options: {
   });
 
   batchReviewRoute.post('/:taskId/retry', async (c) => {
-    const authHeader = c.req.header('authorization') ?? '';
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-
-    if (!token) {
-      return c.json({ message: '未登录或会话已失效' }, 401);
-    }
-
-    try {
-      await verifyToken(token, c.get('config'));
-    } catch {
-      throw new HTTPException(401, { message: '未登录或会话已失效' });
-    }
+    await requireBatchReviewSession(c);
 
     const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
     const taskStore = c.get('batchReviewTaskStore');

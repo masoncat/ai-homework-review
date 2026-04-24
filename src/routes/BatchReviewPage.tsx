@@ -1,21 +1,32 @@
-import { startTransition, useEffect, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import type {
+  BatchReviewNotification,
   BatchReviewTaskSnapshot,
+  BatchReviewTaskSummary,
   SessionResponse,
   UploadPolicyResponse,
 } from '../../shared/types';
+import BatchNotificationInbox from '../components/BatchNotificationInbox';
+import BatchTaskList from '../components/BatchTaskList';
+import BatchTaskSummary from '../components/BatchTaskSummary';
 import BatchReviewWizard from '../components/BatchReviewWizard';
 import {
+  listBatchReviewNotifications as defaultListBatchReviewNotifications,
+  listBatchReviewTasks as defaultListBatchReviewTasks,
+  markBatchReviewNotificationRead as defaultMarkBatchReviewNotificationRead,
   requestSession as defaultRequestSession,
   requestUploadPolicy as defaultRequestUploadPolicy,
   requestDevDefaultBatchFiles as defaultLoadDefaultBatchFiles,
   submitBatchReview as defaultSubmitBatchReview,
   uploadFileWithPolicy as defaultUploadFile,
 } from '../lib/api';
-import { saveLatestBatchReviewTaskSession } from '../lib/demoSession';
+import {
+  saveBatchReviewAccessSession,
+} from '../lib/demoSession';
 import { isApiConfigured } from '../lib/env';
 
 const INVITE_CODE_STORAGE_KEY = 'ai-homework-review:last-invite-code';
+const TASK_CENTER_POLL_INTERVAL_MS = 5000;
 
 function readInviteCodeFromUrl(location: Location = window.location) {
   const pageQueryInviteCode = new URLSearchParams(location.search)
@@ -43,6 +54,12 @@ function readStoredInviteCode(storage: Storage = window.localStorage) {
   return storage.getItem(INVITE_CODE_STORAGE_KEY)?.trim() ?? '';
 }
 
+function isLegacyInlineTask(
+  task: BatchReviewTaskSummary | BatchReviewTaskSnapshot
+): task is BatchReviewTaskSnapshot {
+  return 'answerPdfObjectKey' in task && 'rubricObjectKey' in task;
+}
+
 export interface BatchReviewPageProps {
   requestSession?: (input: {
     inviteCode: string;
@@ -61,7 +78,17 @@ export interface BatchReviewPageProps {
     accessToken: string;
     answerPdfObjectKey: string;
     rubricObjectKey: string;
-  }) => Promise<BatchReviewTaskSnapshot>;
+  }) => Promise<BatchReviewTaskSummary | BatchReviewTaskSnapshot>;
+  listBatchReviewTasks?: (
+    accessToken: string
+  ) => Promise<BatchReviewTaskSummary[]>;
+  listBatchReviewNotifications?: (
+    accessToken: string
+  ) => Promise<BatchReviewNotification[]>;
+  markBatchReviewNotificationRead?: (
+    accessToken: string,
+    notificationId: string
+  ) => Promise<{ ok: boolean }>;
   loadDefaultBatchFiles?: () => Promise<{
     inviteCode: string;
     answerPdf: File;
@@ -74,6 +101,9 @@ export default function BatchReviewPage({
   requestUploadPolicy = defaultRequestUploadPolicy,
   uploadFile = defaultUploadFile,
   submitBatchReview = defaultSubmitBatchReview,
+  listBatchReviewTasks = defaultListBatchReviewTasks,
+  listBatchReviewNotifications = defaultListBatchReviewNotifications,
+  markBatchReviewNotificationRead = defaultMarkBatchReviewNotificationRead,
   loadDefaultBatchFiles = defaultLoadDefaultBatchFiles,
 }: BatchReviewPageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -86,6 +116,13 @@ export default function BatchReviewPage({
   const [rubricFile, setRubricFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [taskCenterError, setTaskCenterError] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [taskSummaries, setTaskSummaries] = useState<BatchReviewTaskSummary[]>([]);
+  const [notifications, setNotifications] = useState<BatchReviewNotification[]>([]);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!inviteCode.trim()) {
@@ -122,6 +159,122 @@ export default function BatchReviewPage({
       cancelled = true;
     };
   }, [loadDefaultBatchFiles]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function ensureTaskCenterSession() {
+      if (!inviteCode.trim() || !isApiConfigured()) {
+        return;
+      }
+
+      try {
+        const session = await requestSession({
+          inviteCode: inviteCode.trim(),
+          humanToken: 'pass-human-check',
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setAccessToken(session.accessToken);
+        saveBatchReviewAccessSession({
+          inviteCode: inviteCode.trim(),
+          accessToken: session.accessToken,
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setTaskCenterError(
+          error instanceof Error ? error.message : '获取任务中心会话失败'
+        );
+      }
+    }
+
+    void ensureTaskCenterSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteCode, requestSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    async function loadTaskCenterData() {
+      if (!accessToken) {
+        return;
+      }
+
+      try {
+        const [nextTasks, nextNotifications] = await Promise.all([
+          listBatchReviewTasks(accessToken),
+          listBatchReviewNotifications(accessToken),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setTaskSummaries(nextTasks);
+        setNotifications(nextNotifications);
+        setTaskCenterError('');
+
+        const unreadNew = nextNotifications.find(
+          (item) => !item.isRead && !seenNotificationIdsRef.current.has(item.id)
+        );
+
+        if (unreadNew) {
+          setToastMessage(unreadNew.message);
+        }
+
+        seenNotificationIdsRef.current = new Set(
+          nextNotifications.map((item) => item.id)
+        );
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setTaskCenterError(
+          error instanceof Error ? error.message : '获取任务中心数据失败'
+        );
+      }
+    }
+
+    void loadTaskCenterData();
+
+    if (accessToken) {
+      intervalId = window.setInterval(() => {
+        void loadTaskCenterData();
+      }, TASK_CENTER_POLL_INTERVAL_MS);
+    }
+
+    return () => {
+      cancelled = true;
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [accessToken, listBatchReviewNotifications, listBatchReviewTasks]);
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToastMessage('');
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toastMessage]);
 
   const canUseApi =
     isApiConfigured() ||
@@ -182,6 +335,12 @@ export default function BatchReviewPage({
         humanToken: 'pass-human-check',
       });
 
+      setAccessToken(session.accessToken);
+      saveBatchReviewAccessSession({
+        inviteCode: inviteCode.trim(),
+        accessToken: session.accessToken,
+      });
+
       const answerPolicy = await requestUploadPolicy(
         session.accessToken,
         answerPdf.name
@@ -200,13 +359,10 @@ export default function BatchReviewPage({
         rubricObjectKey: rubricPolicy.objectKey,
       });
 
-      saveLatestBatchReviewTaskSession({
-        task,
-        accessToken: session.accessToken,
-      });
-
       startTransition(() => {
-        window.location.hash = `#/batch-review/result/${task.taskId}`;
+        window.location.hash = isLegacyInlineTask(task)
+          ? `#/batch-review/result/${task.taskId}`
+          : `#/batch-review/tasks/${task.taskId}`;
       });
     } catch (error) {
       setErrorMessage(
@@ -217,34 +373,85 @@ export default function BatchReviewPage({
     }
   }
 
+  async function handleMarkNotificationRead(notificationId: string) {
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      await markBatchReviewNotificationRead(accessToken, notificationId);
+      setNotifications((current) =>
+        current.map((item) =>
+          item.id === notificationId ? { ...item, isRead: true } : item
+        )
+      );
+    } catch (error) {
+      setTaskCenterError(
+        error instanceof Error ? error.message : '更新通知状态失败'
+      );
+    }
+  }
+
   return (
     <main className="page-shell">
       <section className="hero-card batch-hero-card">
         <p className="eyebrow">班级单题批量批改</p>
-        <h1>按“整班同题 PDF + 评分标准”批量给出老师批注</h1>
+        <h1>任务中心先看总览，再点开单份作业点评</h1>
         <p className="hero-copy">
-          保留现有固定版式批改链路不变，这个页面专门处理自由排版过程题。
-          一页默认视为一位学生，系统会逐页拆图、结合 rubric 做多模态批改。
+          批量批改已经改成离线任务模式。页面主视图聚焦最近 7 天任务、站内通知和可重试任务，新建任务折叠在下方。
         </p>
+        <div className="hero-actions">
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => setShowCreateForm((current) => !current)}
+          >
+            {showCreateForm ? '收起新建任务' : '新建批量任务'}
+          </button>
+        </div>
+        {toastMessage ? <p className="batch-toast">{toastMessage}</p> : null}
       </section>
 
-      <BatchReviewWizard
-        step={step}
-        inviteCode={inviteCode}
-        answerPdfName={answerPdf?.name ?? ''}
-        rubricFileName={rubricFile?.name ?? ''}
-        busy={busy}
-        errorMessage={errorMessage}
-        onInviteCodeChange={setInviteCode}
-        onAnswerPdfChange={setAnswerPdf}
-        onRubricFileChange={setRubricFile}
-        onPrev={() => {
-          setErrorMessage('');
-          setStep((currentStep) => (currentStep === 3 ? 2 : 1));
+      <BatchTaskSummary tasks={taskSummaries} />
+
+      {taskCenterError ? (
+        <section className="status-card">
+          <p className="eyebrow">任务中心提示</p>
+          <p>{taskCenterError}</p>
+        </section>
+      ) : null}
+
+      <BatchTaskList
+        tasks={taskSummaries}
+        onOpenTask={(taskId) => {
+          window.location.hash = `#/batch-review/tasks/${taskId}`;
         }}
-        onNext={handleNext}
-        onSubmit={handleSubmit}
       />
+
+      <BatchNotificationInbox
+        notifications={notifications}
+        onMarkRead={handleMarkNotificationRead}
+      />
+
+      {showCreateForm ? (
+        <BatchReviewWizard
+          step={step}
+          inviteCode={inviteCode}
+          answerPdfName={answerPdf?.name ?? ''}
+          rubricFileName={rubricFile?.name ?? ''}
+          busy={busy}
+          errorMessage={errorMessage}
+          onInviteCodeChange={setInviteCode}
+          onAnswerPdfChange={setAnswerPdf}
+          onRubricFileChange={setRubricFile}
+          onPrev={() => {
+            setErrorMessage('');
+            setStep((currentStep) => (currentStep === 3 ? 2 : 1));
+          }}
+          onNext={handleNext}
+          onSubmit={handleSubmit}
+        />
+      ) : null}
     </main>
   );
 }

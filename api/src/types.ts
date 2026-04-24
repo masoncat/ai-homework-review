@@ -1,4 +1,5 @@
 import type { AppConfig } from './config.js';
+import type { BatchReviewRepository } from './lib/batchReviewRepository.js';
 import type { BatchReviewProvider } from './lib/batchVisionProvider.js';
 import type { BatchReviewTaskStore } from './lib/batchReviewTaskStore.js';
 import type { ObjectStore } from './lib/objectStore.js';
@@ -19,6 +20,7 @@ export type AppBindings = {
     visionProvider: VisionProvider;
     teachingProvider: TeachingProvider;
     batchReviewProvider: BatchReviewProvider;
+    batchReviewRepository: BatchReviewRepository | null;
     batchReviewTaskStore: BatchReviewTaskStore;
     objectStore: ObjectStore;
     objectStoreRuntimeContext: ObjectStoreRuntimeContext | null;

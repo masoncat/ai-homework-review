@@ -78,3 +78,12 @@ CREATE TABLE IF NOT EXISTS batch_review_task_events (
   KEY batch_review_task_events_type_created_idx (event_type, created_at)
 )
 `;
+
+export async function initializeBatchReviewSchema(db: {
+  execute(sql: string, params?: unknown[]): Promise<unknown>;
+}) {
+  await db.execute(CREATE_BATCH_REVIEW_TASKS_SQL);
+  await db.execute(CREATE_BATCH_REVIEW_TASK_PAGES_SQL);
+  await db.execute(CREATE_BATCH_REVIEW_NOTIFICATIONS_SQL);
+  await db.execute(CREATE_BATCH_REVIEW_TASK_EVENTS_SQL);
+}

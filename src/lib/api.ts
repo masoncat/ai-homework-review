@@ -1,5 +1,8 @@
 import type {
   BatchReviewResult,
+  BatchReviewNotification,
+  BatchReviewTaskDetail,
+  BatchReviewTaskSummary,
   BatchReviewTaskSnapshot,
   GradeResponse,
   SessionResponse,
@@ -54,6 +57,26 @@ function resolveUrl(path: string) {
   }
 
   return `${baseUrl}${path}`;
+}
+
+async function createApiError(
+  fallbackMessage: string,
+  response: Response
+): Promise<Error & { status?: number }> {
+  let message = fallbackMessage;
+
+  try {
+    const payload = (await response.json()) as { message?: string };
+    if (typeof payload?.message === 'string' && payload.message.trim()) {
+      message = payload.message;
+    }
+  } catch {
+    // Ignore non-JSON error bodies and fall back to the caller-supplied message.
+  }
+
+  const error = new Error(message) as Error & { status?: number };
+  error.status = response.status;
+  return error;
 }
 
 export async function requestSession(
@@ -215,7 +238,7 @@ export async function submitGrade(input: GradeInput): Promise<GradeResponse> {
 
 export async function submitBatchReview(
   input: BatchReviewInput
-): Promise<BatchReviewTaskSnapshot> {
+): Promise<BatchReviewTaskSnapshot | BatchReviewTaskSummary> {
   const res = await fetch(resolveUrl('/batch-review'), {
     method: 'POST',
     headers: {
@@ -271,6 +294,107 @@ export async function retryBatchReviewTask(
 
   if (!res.ok) {
     throw new Error('发起批量重批失败');
+  }
+
+  return res.json();
+}
+
+export async function listBatchReviewTasks(
+  accessToken: string
+): Promise<BatchReviewTaskSummary[]> {
+  const res = await fetch(resolveUrl('/batch-review/tasks'), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    if (res.status === 404) {
+      return [];
+    }
+
+    throw await createApiError('获取批量任务列表失败', res);
+  }
+
+  return res.json();
+}
+
+export async function getBatchReviewTaskDetail(
+  accessToken: string,
+  taskId: string
+): Promise<BatchReviewTaskDetail> {
+  const res = await fetch(resolveUrl(`/batch-review/tasks/${taskId}`), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw await createApiError('获取批量任务详情失败', res);
+  }
+
+  return res.json();
+}
+
+export async function createBatchReviewRetryTask(
+  accessToken: string,
+  taskId: string
+): Promise<BatchReviewTaskSummary> {
+  const res = await fetch(resolveUrl(`/batch-review/tasks/${taskId}/retry`), {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    throw await createApiError('创建重试任务失败', res);
+  }
+
+  return res.json();
+}
+
+export async function listBatchReviewNotifications(
+  accessToken: string
+): Promise<BatchReviewNotification[]> {
+  const res = await fetch(resolveUrl('/batch-review/notifications'), {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    if (res.status === 404) {
+      return [];
+    }
+
+    throw await createApiError('获取站内通知失败', res);
+  }
+
+  return res.json();
+}
+
+export async function markBatchReviewNotificationRead(
+  accessToken: string,
+  notificationId: string
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    resolveUrl(`/batch-review/notifications/${notificationId}/read`),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!res.ok) {
+    throw await createApiError('更新通知状态失败', res);
   }
 
   return res.json();

@@ -30,10 +30,37 @@
 10. `OSS_STS_ENDPOINT` 不是 OSS 域名，保持 `sts.cn-hangzhou.aliyuncs.com`。
 11. OCR 识别配置 `OCR_AI_BASE_URL`、`OCR_AI_API_KEY`、`OCR_AI_MODEL`，推荐阿里 `qwen-vl-ocr-latest`。
 12. 讲评文本配置 `TEXT_AI_BASE_URL`、`TEXT_AI_API_KEY`、`TEXT_AI_MODEL`，当前推荐 `gpt-5.4`。
-13. 班级批量批改配置 `BATCH_VISION_AI_BASE_URL`、`BATCH_VISION_AI_API_KEY`、`BATCH_VISION_AI_MODEL`，当前推荐 `qwen-vl-max-latest`。
-14. 如果文本模型网关要求流式补全，可额外配置 `TEXT_AI_STREAM=true`。
-15. 将函数计算和前端域名加入 `ALLOWED_ORIGINS` 白名单。
-16. `api/.env` 只用于本地开发和部署注入，不要提交到 GitHub。
+13. 班级批量批改配置 `BATCH_VISION_AI_BASE_URL`、`BATCH_VISION_AI_API_KEY`、`BATCH_VISION_AI_MODEL`。
+14. 如果要启用离线批量任务中心，额外配置：
+   - `MYSQL_URL`
+   - `BATCH_REVIEW_EXECUTION_MODE=offline`
+   - `BATCH_WORKER_ID`
+   - `BATCH_WORKER_POLL_INTERVAL_MS`
+   - `BATCH_REVIEW_TASK_LOOKBACK_DAYS`
+15. `BATCH_REVIEW_EXECUTION_MODE` 说明：
+   - `inline`：沿用原来的请求内批量批改路径，适合回滚或兼容旧流程。
+   - `offline`：API 只负责创建和查询任务，MySQL 保存状态，ECS 常驻 worker 真正执行批改。
+16. 如果文本模型网关要求流式补全，可额外配置 `TEXT_AI_STREAM=true`。
+17. 将函数计算和前端域名加入 `ALLOWED_ORIGINS` 白名单。
+18. `api/.env` 只用于本地开发和部署注入，不要提交到 GitHub。
+
+## 离线批量任务
+
+1. 先准备 MySQL，并确保 `MYSQL_URL` 指向可连通实例。
+2. API 进程继续负责：
+   - 创建批量任务
+   - 查询任务列表
+   - 查询任务详情
+   - 创建失败页重试子任务
+3. 常驻 worker 建议单独部署在 ECS：
+
+```bash
+cd api
+npm run worker
+```
+
+4. worker 启动后会自动确保离线批量任务表存在，然后持续轮询 MySQL 待处理任务。
+5. `#/batch-review` 页面会轮询最近 7 天任务和站内通知，失败任务可以直接新建子任务重试。
 
 ## 联调建议
 
@@ -55,3 +82,4 @@
    - 一份“同一道题整班答案汇总 PDF”
    - 一份评分标准图片或 PDF
 10. 浏览器若因 OSS CORS 或预检失败无法直传，前端会自动回退到后端 `/uploads/direct/*` 代理上传；若你希望始终走浏览器直传，需要在 OSS 上正确配置 CORS。
+11. 如果在预发或线上观察到阿里云函数不稳定，优先切 `BATCH_REVIEW_EXECUTION_MODE=offline`，把批量任务从请求链路剥离出来，再看 worker 日志和 MySQL 任务状态。

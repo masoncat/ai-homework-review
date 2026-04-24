@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { uploadFileWithPolicy } from './api';
+import {
+  listBatchReviewNotifications,
+  listBatchReviewTasks,
+  uploadFileWithPolicy,
+} from './api';
 
 const putMock = vi.fn();
 const constructorMock = vi.fn();
@@ -98,5 +102,16 @@ describe('uploadFileWithPolicy', () => {
         }),
       })
     );
+  });
+
+  it('treats offline task-center 404 responses as empty lists for migration compatibility', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: vi.fn(async () => ({ message: '未找到批量批改任务' })),
+    } as unknown as Response);
+
+    await expect(listBatchReviewTasks('token')).resolves.toEqual([]);
+    await expect(listBatchReviewNotifications('token')).resolves.toEqual([]);
   });
 });

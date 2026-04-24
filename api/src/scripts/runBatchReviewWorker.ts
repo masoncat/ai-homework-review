@@ -1,12 +1,7 @@
 import { readConfig } from '../config.js';
 import { createBatchReviewProvider } from '../lib/batchVisionProvider.js';
 import { createBatchReviewRepository } from '../lib/batchReviewRepository.js';
-import {
-  CREATE_BATCH_REVIEW_NOTIFICATIONS_SQL,
-  CREATE_BATCH_REVIEW_TASK_EVENTS_SQL,
-  CREATE_BATCH_REVIEW_TASK_PAGES_SQL,
-  CREATE_BATCH_REVIEW_TASKS_SQL,
-} from '../lib/batchReviewSql.js';
+import { initializeBatchReviewSchema } from '../lib/batchReviewSql.js';
 import { createBatchReviewWorker } from '../lib/batchReviewWorker.js';
 import { createMysqlPool } from '../lib/mysql.js';
 import { createObjectStoreFromConfig } from '../lib/objectStore.js';
@@ -19,10 +14,7 @@ async function main() {
   }
 
   const mysqlPool = createMysqlPool(config.mysqlUrl);
-  await mysqlPool.execute(CREATE_BATCH_REVIEW_TASKS_SQL);
-  await mysqlPool.execute(CREATE_BATCH_REVIEW_TASK_PAGES_SQL);
-  await mysqlPool.execute(CREATE_BATCH_REVIEW_NOTIFICATIONS_SQL);
-  await mysqlPool.execute(CREATE_BATCH_REVIEW_TASK_EVENTS_SQL);
+  await initializeBatchReviewSchema(mysqlPool);
 
   const objectStore = createObjectStoreFromConfig(config);
   const batchReviewProvider = createBatchReviewProvider(config, objectStore);

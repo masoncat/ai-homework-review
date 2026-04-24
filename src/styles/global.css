@@ -241,6 +241,161 @@ h3 {
   grid-template-columns: 1fr;
 }
 
+.batch-task-summary-grid,
+.batch-task-list,
+.batch-task-detail-grid,
+.batch-notification-list {
+  display: grid;
+  gap: 16px;
+}
+
+.batch-task-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.batch-task-stat-card,
+.batch-task-card,
+.batch-notification-card,
+.batch-task-page-button {
+  border: 1px solid rgba(38, 53, 77, 0.08);
+  background: var(--panel-strong);
+  border-radius: 22px;
+}
+
+.batch-task-stat-card {
+  padding: 18px;
+}
+
+.batch-task-stat-card strong {
+  display: block;
+  font-size: 2rem;
+  margin-bottom: 6px;
+}
+
+.batch-task-card {
+  padding: 18px;
+}
+
+.batch-task-card-head,
+.batch-notification-card,
+.batch-task-card-meta,
+.batch-task-progress,
+.batch-notification-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.batch-task-card-head p,
+.batch-task-card-meta,
+.batch-notification-card p,
+.batch-notification-meta {
+  color: var(--muted);
+}
+
+.task-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: rgba(38, 53, 77, 0.08);
+}
+
+.status-running {
+  background: rgba(216, 107, 42, 0.16);
+  color: var(--warn);
+}
+
+.status-completed {
+  background: rgba(31, 138, 90, 0.14);
+  color: var(--ok);
+}
+
+.status-partial_failed,
+.status-failed {
+  background: rgba(162, 61, 24, 0.16);
+  color: var(--accent-deep);
+}
+
+.batch-task-progress {
+  align-items: center;
+  margin: 18px 0 14px;
+}
+
+.batch-progress-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(38, 53, 77, 0.08);
+  overflow: hidden;
+}
+
+.batch-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #f08937);
+}
+
+.batch-notification-card {
+  padding: 16px 18px;
+  align-items: center;
+}
+
+.batch-toast {
+  margin-top: 16px;
+  display: inline-flex;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(31, 138, 90, 0.12);
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.batch-task-detail-layout {
+  display: grid;
+  gap: 20px;
+}
+
+.batch-task-page-list {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-task-page-button {
+  padding: 16px;
+  text-align: left;
+}
+
+.batch-task-page-button.active {
+  border-color: rgba(215, 90, 32, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(215, 90, 32, 0.28);
+}
+
+.batch-task-page-button span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+.batch-task-answer-image {
+  width: 100%;
+  border-radius: 20px;
+  border: 1px solid rgba(38, 53, 77, 0.08);
+  margin: 18px 0;
+}
+
+@media (min-width: 900px) {
+  .batch-task-detail-layout {
+    grid-template-columns: 320px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
 .step-heading {
   display: flex;
   gap: 14px;

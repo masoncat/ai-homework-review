@@ -308,4 +308,112 @@ describe('createBatchReviewRepository', () => {
       repo.markNotificationRead('notification-1', 'demo-code')
     ).resolves.toBe(true);
   });
+
+  it('claims the oldest queued task with pending pages', async () => {
+    const { transaction, repo } = createDb();
+    transaction.query.mockResolvedValueOnce([
+      [
+        {
+          id: 'task-1',
+          session_invite_code: 'demo-code',
+          answer_pdf_object_key: 'uploads/batch/answers.pdf',
+          rubric_object_key: 'uploads/batch/rubric.pdf',
+          page_nos: '2,3,4',
+        },
+      ],
+    ]);
+    transaction.execute.mockResolvedValueOnce([{ affectedRows: 1 }]);
+
+    await expect(repo.claimNextQueuedTask('worker-1')).resolves.toEqual({
+      taskId: 'task-1',
+      inviteCode: 'demo-code',
+      answerPdfObjectKey: 'uploads/batch/answers.pdf',
+      rubricObjectKey: 'uploads/batch/rubric.pdf',
+      pageNos: [2, 3, 4],
+    });
+
+    expect(transaction.commit).toHaveBeenCalledTimes(1);
+    expect(transaction.rollback).not.toHaveBeenCalled();
+  });
+
+  it('returns null when no queued task can be claimed', async () => {
+    const { transaction, repo } = createDb();
+    transaction.query.mockResolvedValueOnce([[]]);
+
+    await expect(repo.claimNextQueuedTask('worker-1')).resolves.toBeNull();
+
+    expect(transaction.execute).not.toHaveBeenCalled();
+    expect(transaction.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates task and page counters while pages complete or fail', async () => {
+    const { db, repo } = createDb();
+    db.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+    await repo.markTaskRunning('task-1', 'worker-1');
+    await repo.markPageRunning('task-1', 1);
+    await repo.saveCompletedPage({
+      taskId: 'task-1',
+      pageNo: 1,
+      answerImageObjectKey: 'derived/page-1.png',
+      answerImageUrl: 'https://oss.example.com/page-1.png',
+      score: 8,
+      level: '达到预期',
+      summary: '完成',
+      displayName: '第 1 份',
+      strengths: ['优点'],
+      issues: ['问题'],
+      suggestions: ['建议'],
+    });
+    await repo.saveFailedPage({
+      taskId: 'task-1',
+      pageNo: 2,
+      errorMessage: 'model timeout',
+    });
+
+    expect(db.execute).toHaveBeenCalledTimes(6);
+    expect(db.execute.mock.calls[0]?.[0]).toContain("SET status = 'running'");
+    expect(db.execute.mock.calls[1]?.[0]).toContain("SET status = 'running'");
+    expect(db.execute.mock.calls[2]?.[0]).toContain("SET status = 'completed'");
+    expect(db.execute.mock.calls[3]?.[0]).toContain('processed_pages = processed_pages + 1');
+    expect(db.execute.mock.calls[4]?.[0]).toContain("SET status = 'failed'");
+    expect(db.execute.mock.calls[5]?.[0]).toContain('failed_pages = failed_pages + 1');
+  });
+
+  it('finalizes tasks and writes notifications plus task events', async () => {
+    const { db, repo } = createDb();
+    db.execute.mockResolvedValue([{ affectedRows: 1 }]);
+
+    await repo.finalizeTask({
+      taskId: 'task-1',
+      status: 'partial_failed',
+      processedPages: 2,
+      succeededPages: 1,
+      failedPages: 1,
+      pendingPages: 0,
+      summary: { text: '部分完成' },
+      lastErrorMessage: 'model timeout',
+    });
+    await repo.createNotification({
+      inviteCode: 'demo-code',
+      taskId: 'task-1',
+      type: 'task_partial_failed',
+      title: '部分完成',
+      message: '仍有失败页',
+    });
+    await repo.createTaskEvent({
+      taskId: 'task-1',
+      eventType: 'page_failed',
+      payload: { pageNo: 2 },
+    });
+
+    expect(db.execute).toHaveBeenCalledTimes(3);
+    expect(db.execute.mock.calls[0]?.[0]).toContain('summary_json = ?');
+    expect(db.execute.mock.calls[1]?.[0]).toContain(
+      'INSERT INTO batch_review_notifications'
+    );
+    expect(db.execute.mock.calls[2]?.[0]).toContain(
+      'INSERT INTO batch_review_task_events'
+    );
+  });
 });

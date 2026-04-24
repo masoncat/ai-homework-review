@@ -141,6 +141,47 @@ export interface BatchReviewTaskSummary {
   updatedAt: string;
 }
 
+export interface BatchReviewTaskDetailPage {
+  id: string;
+  pageNo: number;
+  status: BatchReviewPageLifecycleStatus;
+  answerImageObjectKey?: string;
+  answerImageUrl?: string;
+  score?: number;
+  level?: string;
+  summary?: string;
+  result?: unknown;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+}
+
+export interface BatchReviewTaskDetail {
+  taskId: string;
+  inviteCode: string;
+  parentTaskId?: string;
+  retryFromTaskId?: string;
+  status: BatchReviewTaskLifecycleStatus;
+  answerPdfObjectKey: string;
+  rubricObjectKey: string;
+  totalPages: number;
+  processedPages: number;
+  succeededPages: number;
+  failedPages: number;
+  pendingPages: number;
+  summary: unknown;
+  lastErrorMessage?: string;
+  workerId?: string;
+  lockedAt?: string;
+  queuedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  pages: BatchReviewTaskDetailPage[];
+}
+
 export interface BatchReviewNotification {
   id: string;
   taskId: string;

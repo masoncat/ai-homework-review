@@ -1,6 +1,7 @@
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import BatchReviewPage from './routes/BatchReviewPage';
 import BatchReviewResultPage from './routes/BatchReviewResultPage';
+import BatchReviewTaskDetailPage from './routes/BatchReviewTaskDetailPage';
 import HomePage from './routes/HomePage';
 import ResultPage from './routes/ResultPage';
 
@@ -10,6 +11,10 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/batch-review" element={<BatchReviewPage />} />
+        <Route
+          path="/batch-review/tasks/:taskId"
+          element={<BatchReviewTaskDetailPage />}
+        />
         <Route
           path="/batch-review/result/:taskId"
           element={<BatchReviewResultPage />}

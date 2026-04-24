@@ -9,6 +9,7 @@ import type {
 
 const STORAGE_KEY = 'ai-homework-review:last-result';
 const BATCH_STORAGE_KEY = 'ai-homework-review:last-batch-task';
+const BATCH_ACCESS_STORAGE_KEY = 'ai-homework-review:batch-access-session';
 
 function rotateChoice(answer: string) {
   const order = ['A', 'B', 'C', 'D'];
@@ -82,6 +83,11 @@ export interface BatchReviewTaskSession {
   accessToken: string;
 }
 
+export interface BatchReviewAccessSession {
+  inviteCode: string;
+  accessToken: string;
+}
+
 export function saveLatestBatchReviewTaskSession(
   session: BatchReviewTaskSession
 ) {
@@ -97,6 +103,24 @@ export function loadLatestBatchReviewTaskSession(): BatchReviewTaskSession | nul
 
   try {
     return JSON.parse(raw) as BatchReviewTaskSession;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBatchReviewAccessSession(session: BatchReviewAccessSession) {
+  sessionStorage.setItem(BATCH_ACCESS_STORAGE_KEY, JSON.stringify(session));
+}
+
+export function loadBatchReviewAccessSession(): BatchReviewAccessSession | null {
+  const raw = sessionStorage.getItem(BATCH_ACCESS_STORAGE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as BatchReviewAccessSession;
   } catch {
     return null;
   }

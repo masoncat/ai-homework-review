@@ -29,6 +29,7 @@ interface BatchReviewTaskRow {
   updated_at: Date | string;
   latest_child_task_id?: string | null;
   retryable_page_count?: number;
+  page_nos?: string | null;
 }
 
 interface BatchReviewTaskPageRow {
@@ -131,6 +132,55 @@ export interface BatchReviewRepository {
     notificationId: string,
     inviteCode: string
   ): Promise<boolean>;
+  claimNextQueuedTask(workerId: string): Promise<{
+    taskId: string;
+    inviteCode: string;
+    answerPdfObjectKey: string;
+    rubricObjectKey: string;
+    pageNos: number[];
+  } | null>;
+  markTaskRunning(taskId: string, workerId: string): Promise<void>;
+  markPageRunning(taskId: string, pageNo: number): Promise<void>;
+  saveCompletedPage(input: {
+    taskId: string;
+    pageNo: number;
+    answerImageObjectKey: string;
+    answerImageUrl: string;
+    score: number;
+    level: string;
+    summary: string;
+    displayName: string;
+    strengths: string[];
+    issues: string[];
+    suggestions: string[];
+  }): Promise<void>;
+  saveFailedPage(input: {
+    taskId: string;
+    pageNo: number;
+    errorMessage: string;
+  }): Promise<void>;
+  finalizeTask(input: {
+    taskId: string;
+    status: Extract<BatchReviewTaskStatus, 'completed' | 'partial_failed' | 'failed'>;
+    processedPages: number;
+    succeededPages: number;
+    failedPages: number;
+    pendingPages: number;
+    summary: unknown;
+    lastErrorMessage?: string;
+  }): Promise<void>;
+  createNotification(input: {
+    inviteCode: string;
+    taskId: string;
+    type: BatchReviewNotification['type'];
+    title: string;
+    message: string;
+  }): Promise<void>;
+  createTaskEvent(input: {
+    taskId: string;
+    eventType: string;
+    payload: unknown;
+  }): Promise<void>;
 }
 
 export interface BatchReviewRepositoryDb {
@@ -339,6 +389,17 @@ VALUES ${placeholders}
 
 function getRetryablePageStatusPlaceholders(): string {
   return RETRYABLE_PAGE_STATUSES.map(() => '?').join(', ');
+}
+
+function parsePageNos(value: string | null | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
 }
 
 export function createBatchReviewRepository(
@@ -557,6 +618,251 @@ WHERE id = ? AND session_invite_code = ? AND is_read = 0
       );
 
       return Number(result?.affectedRows ?? 0) > 0;
+    },
+
+    async claimNextQueuedTask(workerId) {
+      const now = new Date();
+      const transaction = await db.beginTransaction();
+
+      try {
+        const taskRows = getRows<BatchReviewTaskRow>(
+          await transaction.query(
+            `
+SELECT
+  task.*,
+  GROUP_CONCAT(page.page_no ORDER BY page.page_no ASC) AS page_nos
+FROM batch_review_tasks task
+JOIN batch_review_task_pages page
+  ON page.task_id = task.id
+  AND page.status = 'pending'
+WHERE task.status = 'queued'
+  AND (task.locked_at IS NULL OR task.locked_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE))
+GROUP BY task.id
+ORDER BY task.created_at ASC
+LIMIT 1
+FOR UPDATE
+`,
+            []
+          )
+        );
+        const [taskRow] = taskRows;
+
+        if (!taskRow) {
+          await transaction.rollback();
+          return null;
+        }
+
+        await transaction.execute(
+          `
+UPDATE batch_review_tasks
+SET worker_id = ?, locked_at = ?, updated_at = ?
+WHERE id = ?
+`,
+          [workerId, now, now, taskRow.id]
+        );
+        await transaction.commit();
+
+        return {
+          taskId: taskRow.id,
+          inviteCode: taskRow.session_invite_code,
+          answerPdfObjectKey: taskRow.answer_pdf_object_key,
+          rubricObjectKey: taskRow.rubric_object_key,
+          pageNos: parsePageNos(taskRow.page_nos),
+        };
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+    },
+
+    async markTaskRunning(taskId, workerId) {
+      const now = new Date();
+      await db.execute(
+        `
+UPDATE batch_review_tasks
+SET status = 'running',
+    worker_id = ?,
+    locked_at = ?,
+    started_at = COALESCE(started_at, ?),
+    updated_at = ?
+WHERE id = ?
+`,
+        [workerId, now, now, now, taskId]
+      );
+    },
+
+    async markPageRunning(taskId, pageNo) {
+      const now = new Date();
+      await db.execute(
+        `
+UPDATE batch_review_task_pages
+SET status = 'running', updated_at = ?
+WHERE task_id = ? AND page_no = ?
+`,
+        [now, taskId, pageNo]
+      );
+    },
+
+    async saveCompletedPage(input) {
+      const now = new Date();
+      await db.execute(
+        `
+UPDATE batch_review_task_pages
+SET status = 'completed',
+    answer_image_object_key = ?,
+    answer_image_url = ?,
+    score = ?,
+    level = ?,
+    summary = ?,
+    result_json = ?,
+    error_message = NULL,
+    updated_at = ?,
+    finished_at = ?
+WHERE task_id = ? AND page_no = ?
+`,
+        [
+          input.answerImageObjectKey,
+          input.answerImageUrl,
+          input.score,
+          input.level,
+          input.summary,
+          JSON.stringify({
+            displayName: input.displayName,
+            score: input.score,
+            level: input.level,
+            summary: input.summary,
+            strengths: input.strengths,
+            issues: input.issues,
+            suggestions: input.suggestions,
+          }),
+          now,
+          now,
+          input.taskId,
+          input.pageNo,
+        ]
+      );
+      await db.execute(
+        `
+UPDATE batch_review_tasks
+SET processed_pages = processed_pages + 1,
+    succeeded_pages = succeeded_pages + 1,
+    pending_pages = GREATEST(pending_pages - 1, 0),
+    updated_at = ?
+WHERE id = ?
+`,
+        [now, input.taskId]
+      );
+    },
+
+    async saveFailedPage(input) {
+      const now = new Date();
+      await db.execute(
+        `
+UPDATE batch_review_task_pages
+SET status = 'failed',
+    error_message = ?,
+    updated_at = ?,
+    finished_at = ?
+WHERE task_id = ? AND page_no = ?
+`,
+        [input.errorMessage, now, now, input.taskId, input.pageNo]
+      );
+      await db.execute(
+        `
+UPDATE batch_review_tasks
+SET processed_pages = processed_pages + 1,
+    failed_pages = failed_pages + 1,
+    pending_pages = GREATEST(pending_pages - 1, 0),
+    updated_at = ?,
+    last_error_message = ?
+WHERE id = ?
+`,
+        [now, input.errorMessage, input.taskId]
+      );
+    },
+
+    async finalizeTask(input) {
+      const now = new Date();
+      await db.execute(
+        `
+UPDATE batch_review_tasks
+SET status = ?,
+    processed_pages = ?,
+    succeeded_pages = ?,
+    failed_pages = ?,
+    pending_pages = ?,
+    summary_json = ?,
+    last_error_message = ?,
+    locked_at = NULL,
+    finished_at = ?,
+    updated_at = ?
+WHERE id = ?
+`,
+        [
+          input.status,
+          input.processedPages,
+          input.succeededPages,
+          input.failedPages,
+          input.pendingPages,
+          JSON.stringify(input.summary),
+          input.lastErrorMessage ?? null,
+          now,
+          now,
+          input.taskId,
+        ]
+      );
+    },
+
+    async createNotification(input) {
+      const now = new Date();
+      await db.execute(
+        `
+INSERT INTO batch_review_notifications (
+  id,
+  task_id,
+  session_invite_code,
+  type,
+  title,
+  message,
+  is_read,
+  created_at,
+  updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+`,
+        [
+          crypto.randomUUID(),
+          input.taskId,
+          input.inviteCode,
+          input.type,
+          input.title,
+          input.message,
+          now,
+          now,
+        ]
+      );
+    },
+
+    async createTaskEvent(input) {
+      await db.execute(
+        `
+INSERT INTO batch_review_task_events (
+  id,
+  task_id,
+  event_type,
+  payload_json,
+  created_at
+)
+VALUES (?, ?, ?, ?, ?)
+`,
+        [
+          crypto.randomUUID(),
+          input.taskId,
+          input.eventType,
+          JSON.stringify(input.payload),
+          new Date(),
+        ]
+      );
     },
   };
 }
