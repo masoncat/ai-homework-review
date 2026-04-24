@@ -4,6 +4,11 @@ export interface AppConfig {
   inviteCodes: string[];
   humanToken: string;
   publicBaseUrl: string;
+  mysqlUrl: string;
+  batchReviewExecutionMode: 'inline' | 'offline';
+  batchWorkerId: string;
+  batchWorkerPollIntervalMs: number;
+  batchReviewTaskLookbackDays: number;
   objectStoreDriver: 'memory' | 'oss';
   ossBucket: string;
   ossRegion: string;
@@ -47,6 +52,16 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .filter(Boolean),
     humanToken: env.HUMAN_CHECK_TOKEN ?? 'pass-human-check',
     publicBaseUrl: env.PUBLIC_BASE_URL ?? 'https://demo.example.com',
+    mysqlUrl: env.MYSQL_URL ?? '',
+    batchReviewExecutionMode:
+      env.BATCH_REVIEW_EXECUTION_MODE === 'offline' ? 'offline' : 'inline',
+    batchWorkerId: env.BATCH_WORKER_ID ?? 'batch-worker-local',
+    batchWorkerPollIntervalMs: Number(
+      env.BATCH_WORKER_POLL_INTERVAL_MS ?? 1500
+    ),
+    batchReviewTaskLookbackDays: Number(
+      env.BATCH_REVIEW_TASK_LOOKBACK_DAYS ?? 7
+    ),
     objectStoreDriver,
     ossBucket: env.OSS_BUCKET ?? '',
     ossRegion: env.OSS_REGION ?? '',

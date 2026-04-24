@@ -105,6 +105,50 @@ export interface BatchReviewResult {
   summary: BatchReviewSummary;
 }
 
+export type BatchReviewTaskLifecycleStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'partial_failed'
+  | 'failed'
+  | 'cancelled';
+
+export type BatchReviewPageLifecycleStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
+
+export interface BatchReviewTaskSummary {
+  taskId: string;
+  parentTaskId?: string;
+  status: BatchReviewTaskLifecycleStatus;
+  totalPages: number;
+  processedPages: number;
+  succeededPages: number;
+  failedPages: number;
+  summary: string;
+  hasRetryablePages: boolean;
+  latestChildTaskId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BatchReviewNotification {
+  id: string;
+  taskId: string;
+  type:
+    | 'task_completed'
+    | 'task_partial_failed'
+    | 'task_failed'
+    | 'retry_completed';
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export type BatchReviewTaskStatus =
   | 'queued'
   | 'processing'

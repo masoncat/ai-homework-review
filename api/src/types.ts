@@ -11,6 +11,8 @@ export type SessionPayload = {
   inviteCode: string;
 };
 
+export type BatchReviewExecutionMode = AppConfig['batchReviewExecutionMode'];
+
 export type AppBindings = {
   Variables: {
     config: AppConfig;
