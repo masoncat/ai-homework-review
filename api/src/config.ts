@@ -43,7 +43,12 @@ function readNumberEnv(
     return defaultValue;
   }
 
-  const parsedValue = Number(value);
+  const normalizedValue = value.trim();
+  if (normalizedValue.length === 0) {
+    return defaultValue;
+  }
+
+  const parsedValue = Number(normalizedValue);
   return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
 }
 

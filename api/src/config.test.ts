@@ -36,4 +36,14 @@ describe('readConfig', () => {
     expect(config.batchWorkerPollIntervalMs).toBe(1500);
     expect(config.batchReviewTaskLookbackDays).toBe(7);
   });
+
+  it('falls back to default worker numbers when env values are blank', () => {
+    const config = readConfig({
+      BATCH_WORKER_POLL_INTERVAL_MS: '',
+      BATCH_REVIEW_TASK_LOOKBACK_DAYS: '   ',
+    } as NodeJS.ProcessEnv);
+
+    expect(config.batchWorkerPollIntervalMs).toBe(1500);
+    expect(config.batchReviewTaskLookbackDays).toBe(7);
+  });
 });
