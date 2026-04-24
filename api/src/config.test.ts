@@ -18,4 +18,22 @@ describe('readConfig', () => {
     expect(config.batchWorkerPollIntervalMs).toBe(1500);
     expect(config.batchReviewTaskLookbackDays).toBe(7);
   });
+
+  it('defaults batch execution mode to inline and uses default worker numbers', () => {
+    const config = readConfig({} as NodeJS.ProcessEnv);
+
+    expect(config.batchReviewExecutionMode).toBe('inline');
+    expect(config.batchWorkerPollIntervalMs).toBe(1500);
+    expect(config.batchReviewTaskLookbackDays).toBe(7);
+  });
+
+  it('falls back to default worker numbers when env values are malformed', () => {
+    const config = readConfig({
+      BATCH_WORKER_POLL_INTERVAL_MS: 'not-a-number',
+      BATCH_REVIEW_TASK_LOOKBACK_DAYS: 'bad-value',
+    } as NodeJS.ProcessEnv);
+
+    expect(config.batchWorkerPollIntervalMs).toBe(1500);
+    expect(config.batchReviewTaskLookbackDays).toBe(7);
+  });
 });

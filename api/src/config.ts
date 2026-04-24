@@ -35,6 +35,18 @@ export interface AppConfig {
   batchVisionAiModel: string;
 }
 
+function readNumberEnv(
+  value: string | undefined,
+  defaultValue: number
+): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
+}
+
 export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const objectStoreDriver =
     env.OBJECT_STORE_DRIVER === 'oss' ? 'oss' : 'memory';
@@ -56,11 +68,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     batchReviewExecutionMode:
       env.BATCH_REVIEW_EXECUTION_MODE === 'offline' ? 'offline' : 'inline',
     batchWorkerId: env.BATCH_WORKER_ID ?? 'batch-worker-local',
-    batchWorkerPollIntervalMs: Number(
-      env.BATCH_WORKER_POLL_INTERVAL_MS ?? 1500
+    batchWorkerPollIntervalMs: readNumberEnv(
+      env.BATCH_WORKER_POLL_INTERVAL_MS,
+      1500
     ),
-    batchReviewTaskLookbackDays: Number(
-      env.BATCH_REVIEW_TASK_LOOKBACK_DAYS ?? 7
+    batchReviewTaskLookbackDays: readNumberEnv(
+      env.BATCH_REVIEW_TASK_LOOKBACK_DAYS,
+      7
     ),
     objectStoreDriver,
     ossBucket: env.OSS_BUCKET ?? '',

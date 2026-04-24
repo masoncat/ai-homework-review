@@ -105,13 +105,19 @@ export interface BatchReviewResult {
   summary: BatchReviewSummary;
 }
 
-export type BatchReviewTaskLifecycleStatus =
+export type BatchReviewTaskStatus =
   | 'queued'
+  | 'processing'
   | 'running'
   | 'completed'
   | 'partial_failed'
   | 'failed'
   | 'cancelled';
+
+export type BatchReviewTaskLifecycleStatus = Exclude<
+  BatchReviewTaskStatus,
+  'processing'
+>;
 
 export type BatchReviewPageLifecycleStatus =
   | 'pending'
@@ -148,12 +154,6 @@ export interface BatchReviewNotification {
   isRead: boolean;
   createdAt: string;
 }
-
-export type BatchReviewTaskStatus =
-  | 'queued'
-  | 'processing'
-  | 'completed'
-  | 'failed';
 
 export interface BatchReviewTaskSnapshot {
   taskId: string;
