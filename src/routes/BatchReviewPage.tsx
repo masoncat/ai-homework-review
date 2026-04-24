@@ -431,6 +431,9 @@ export default function BatchReviewPage({
       <BatchNotificationInbox
         notifications={notifications}
         onMarkRead={handleMarkNotificationRead}
+        onOpenTask={(taskId) => {
+          window.location.hash = `#/batch-review/tasks/${taskId}`;
+        }}
       />
 
       {showCreateForm ? (

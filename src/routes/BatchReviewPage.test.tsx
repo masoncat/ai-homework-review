@@ -73,6 +73,25 @@ describe('BatchReviewPage', () => {
     });
   });
 
+  it('opens the related task detail when a notification is clicked', async () => {
+    const requestSession = vi.fn(async () => buildSession());
+    const listBatchReviewTasks = vi.fn(async () => [buildTaskSummary()]);
+    const listBatchReviewNotifications = vi.fn(async () => [buildNotification()]);
+
+    render(
+      <BatchReviewPage
+        requestSession={requestSession}
+        listBatchReviewTasks={listBatchReviewTasks}
+        listBatchReviewNotifications={listBatchReviewNotifications}
+        loadDefaultBatchFiles={vi.fn().mockRejectedValue(new Error('skip fixtures'))}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '批改完成' }));
+
+    expect(window.location.hash).toBe('#/batch-review/tasks/task-1');
+  });
+
   it('submits a new batch task and redirects to the offline task detail page', async () => {
     const requestSession = vi.fn(async () => buildSession());
     const requestUploadPolicy = vi

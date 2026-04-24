@@ -3,11 +3,13 @@ import type { BatchReviewNotification } from '../../shared/types';
 interface BatchNotificationInboxProps {
   notifications: BatchReviewNotification[];
   onMarkRead?: (notificationId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 export default function BatchNotificationInbox({
   notifications,
   onMarkRead,
+  onOpenTask,
 }: BatchNotificationInboxProps) {
   const unreadCount = notifications.filter((item) => !item.isRead).length;
 
@@ -28,7 +30,17 @@ export default function BatchNotificationInbox({
         {notifications.map((notification) => (
           <article className="batch-notification-card" key={notification.id}>
             <div>
-              <strong>{notification.title}</strong>
+              {onOpenTask ? (
+                <button
+                  className="inline-button"
+                  type="button"
+                  onClick={() => onOpenTask(notification.taskId)}
+                >
+                  {notification.title}
+                </button>
+              ) : (
+                <strong>{notification.title}</strong>
+              )}
               <p>{notification.message}</p>
             </div>
             <div className="batch-notification-meta">
