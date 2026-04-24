@@ -13,7 +13,7 @@ vi.mock('mysql2/promise', () => ({
 import { createMysqlPool } from './mysql.js';
 
 describe('createMysqlPool', () => {
-  it('creates a mysql pool with the configured uri and connection limit', () => {
+  it('creates a mysql pool with UTC-friendly defaults', () => {
     const pool = { kind: 'mock-pool' };
     createPool.mockReturnValueOnce(pool);
 
@@ -22,6 +22,8 @@ describe('createMysqlPool', () => {
     expect(createPool).toHaveBeenCalledWith({
       uri: 'mysql://demo:secret@localhost:3306/app',
       connectionLimit: 10,
+      timezone: 'Z',
+      dateStrings: true,
     });
     expect(result).toBe(pool);
   });

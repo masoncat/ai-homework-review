@@ -28,6 +28,7 @@ interface BatchReviewTaskRow {
   created_at: Date | string;
   updated_at: Date | string;
   latest_child_task_id?: string | null;
+  retryable_page_count?: number;
 }
 
 interface BatchReviewTaskPageRow {
@@ -135,11 +136,26 @@ export interface BatchReviewRepository {
 export interface BatchReviewRepositoryDb {
   execute(sql: string, params?: unknown[]): Promise<unknown>;
   query(sql: string, params?: unknown[]): Promise<unknown>;
+  beginTransaction(): Promise<BatchReviewRepositoryTransaction>;
+}
+
+export interface BatchReviewRepositoryTransaction {
+  execute(sql: string, params?: unknown[]): Promise<unknown>;
+  query(sql: string, params?: unknown[]): Promise<unknown>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
 }
 
 const DEFAULT_SUMMARY = {
   text: '等待处理',
 };
+
+const RETRYABLE_PAGE_STATUSES: BatchReviewPageLifecycleStatus[] = [
+  'failed',
+  'pending',
+  'running',
+  'skipped',
+];
 
 function getRows<T>(result: unknown): T[] {
   if (Array.isArray(result) && Array.isArray(result[0])) {
@@ -177,7 +193,13 @@ function toIsoString(value: Date | string | null | undefined): string | undefine
     return value.toISOString();
   }
 
-  const date = new Date(value);
+  const trimmed = value.trim();
+  const normalizedValue = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)
+    ? `${trimmed.replace(' ', 'T')}Z`
+    : /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+      ? `${trimmed}T00:00:00Z`
+      : trimmed;
+  const date = new Date(normalizedValue);
   return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 }
 
@@ -215,6 +237,8 @@ function getSummaryText(value: unknown): string {
 }
 
 function mapTaskSummary(row: BatchReviewTaskRow): BatchReviewTaskSummary {
+  const retryablePageCount = Number(row.retryable_page_count ?? 0);
+
   return {
     taskId: row.id,
     parentTaskId: row.parent_task_id ?? undefined,
@@ -227,7 +251,7 @@ function mapTaskSummary(row: BatchReviewTaskRow): BatchReviewTaskSummary {
     succeededPages: Number(row.succeeded_pages ?? 0),
     failedPages: Number(row.failed_pages ?? 0),
     summary: getSummaryText(row.summary_json),
-    hasRetryablePages: Number(row.failed_pages ?? 0) > 0,
+    hasRetryablePages: retryablePageCount > 0,
     latestChildTaskId: row.latest_child_task_id ?? undefined,
     createdAt: toIsoString(row.created_at) ?? '',
     updatedAt: toIsoString(row.updated_at) ?? '',
@@ -313,6 +337,10 @@ VALUES ${placeholders}
 `;
 }
 
+function getRetryablePageStatusPlaceholders(): string {
+  return RETRYABLE_PAGE_STATUSES.map(() => '?').join(', ');
+}
+
 export function createBatchReviewRepository(
   db: BatchReviewRepositoryDb
 ): BatchReviewRepository {
@@ -320,8 +348,10 @@ export function createBatchReviewRepository(
     async createTask(input) {
       const now = new Date();
       const totalPages = input.pageNos.length;
+      const transaction = await db.beginTransaction();
 
-      await db.execute(
+      try {
+        await transaction.execute(
         `
 INSERT INTO batch_review_tasks (
   id,
@@ -343,40 +373,44 @@ INSERT INTO batch_review_tasks (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
-        [
-          input.taskId,
-          input.inviteCode,
-          input.parentTaskId ?? null,
-          input.retryFromTaskId ?? null,
-          'queued',
-          input.answerPdfObjectKey,
-          input.rubricObjectKey,
-          totalPages,
-          0,
-          0,
-          0,
-          totalPages,
-          JSON.stringify(DEFAULT_SUMMARY),
-          now,
-          now,
-          now,
-        ]
-      );
+          [
+            input.taskId,
+            input.inviteCode,
+            input.parentTaskId ?? null,
+            input.retryFromTaskId ?? null,
+            'queued',
+            input.answerPdfObjectKey,
+            input.rubricObjectKey,
+            totalPages,
+            0,
+            0,
+            0,
+            totalPages,
+            JSON.stringify(DEFAULT_SUMMARY),
+            now,
+            now,
+            now,
+          ]
+        );
 
-      if (input.pageNos.length === 0) {
-        return;
+        if (input.pageNos.length > 0) {
+          const pageParams = input.pageNos.flatMap((pageNo) => [
+            `${input.taskId}:${pageNo}`,
+            input.taskId,
+            pageNo,
+            'pending',
+            now,
+            now,
+          ]);
+
+          await transaction.execute(buildPageInsertSql(input.pageNos.length), pageParams);
+        }
+
+        await transaction.commit();
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
       }
-
-      const pageParams = input.pageNos.flatMap((pageNo) => [
-        `${input.taskId}:${pageNo}`,
-        input.taskId,
-        pageNo,
-        'pending',
-        now,
-        now,
-      ]);
-
-      await db.execute(buildPageInsertSql(input.pageNos.length), pageParams);
     },
 
     async listTaskSummaries(inviteCode, lookbackDays) {
@@ -391,13 +425,19 @@ SELECT
     WHERE child.parent_task_id = task.id
     ORDER BY child.created_at DESC
     LIMIT 1
-  ) AS latest_child_task_id
+  ) AS latest_child_task_id,
+  (
+    SELECT COUNT(*)
+    FROM batch_review_task_pages page
+    WHERE page.task_id = task.id
+      AND page.status IN (${getRetryablePageStatusPlaceholders()})
+  ) AS retryable_page_count
 FROM batch_review_tasks task
 WHERE task.session_invite_code = ?
   AND task.created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)
 ORDER BY task.created_at DESC
 `,
-          [inviteCode, lookbackDays]
+          [...RETRYABLE_PAGE_STATUSES, inviteCode, lookbackDays]
         )
       );
 
@@ -461,10 +501,10 @@ LIMIT 1
 SELECT *
 FROM batch_review_task_pages
 WHERE task_id = ?
-  AND status IN ('failed', 'skipped')
+  AND status IN (${getRetryablePageStatusPlaceholders()})
 ORDER BY page_no ASC
 `,
-          [input.parentTaskId]
+          [input.parentTaskId, ...RETRYABLE_PAGE_STATUSES]
         )
       );
 

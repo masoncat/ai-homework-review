@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS batch_review_tasks (
   started_at DATETIME NULL,
   finished_at DATETIME NULL,
   created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL
+  updated_at DATETIME NOT NULL,
+  KEY batch_review_tasks_invite_created_idx (session_invite_code, created_at),
+  KEY batch_review_tasks_parent_created_idx (parent_task_id, created_at),
+  KEY batch_review_tasks_retry_from_idx (retry_from_task_id),
+  KEY batch_review_tasks_status_locked_idx (status, locked_at)
 )
 `;
 
@@ -40,7 +44,8 @@ CREATE TABLE IF NOT EXISTS batch_review_task_pages (
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
   finished_at DATETIME NULL,
-  UNIQUE KEY batch_review_task_pages_task_page_unique (task_id, page_no)
+  UNIQUE KEY batch_review_task_pages_task_page_unique (task_id, page_no),
+  KEY batch_review_task_pages_task_status_page_idx (task_id, status, page_no)
 )
 `;
 
@@ -55,7 +60,10 @@ CREATE TABLE IF NOT EXISTS batch_review_notifications (
   is_read TINYINT(1) NOT NULL DEFAULT 0,
   read_at DATETIME NULL,
   created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL
+  updated_at DATETIME NOT NULL,
+  KEY batch_review_notifications_invite_created_idx (session_invite_code, created_at),
+  KEY batch_review_notifications_invite_read_created_idx (session_invite_code, is_read, created_at),
+  KEY batch_review_notifications_task_created_idx (task_id, created_at)
 )
 `;
 
@@ -65,6 +73,8 @@ CREATE TABLE IF NOT EXISTS batch_review_task_events (
   task_id VARCHAR(64) NOT NULL,
   event_type VARCHAR(64) NOT NULL,
   payload_json JSON NOT NULL,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  KEY batch_review_task_events_task_created_idx (task_id, created_at),
+  KEY batch_review_task_events_type_created_idx (event_type, created_at)
 )
 `;
