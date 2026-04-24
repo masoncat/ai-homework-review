@@ -7,7 +7,8 @@
     "start": "node --env-file=.env dist/api/src/server.js",
     "build": "tsc -p tsconfig.json && npm run build:function",
     "build:function": "node scripts/build-function.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker": "node --env-file=.env --import tsx src/scripts/runBatchReviewWorker.ts"
   },
   "dependencies": {
     "@alicloud/openapi-client": "^0.4.15",
