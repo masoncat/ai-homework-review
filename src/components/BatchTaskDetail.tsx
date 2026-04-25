@@ -38,6 +38,8 @@ interface BatchTaskDetailProps {
   onSelectPage: (pageNo: number) => void;
   onRetry?: () => void;
   retryPending?: boolean;
+  backHref?: string;
+  backLabel?: string;
 }
 
 export default function BatchTaskDetail({
@@ -46,6 +48,8 @@ export default function BatchTaskDetail({
   onSelectPage,
   onRetry,
   retryPending = false,
+  backHref = '#/batch-review',
+  backLabel = '返回任务中心',
 }: BatchTaskDetailProps) {
   const selectedPage =
     task.pages.find((page) => page.pageNo === selectedPageNo) ??
@@ -84,8 +88,8 @@ export default function BatchTaskDetail({
               {retryPending ? '正在创建重试任务...' : '重试剩余未完成部分'}
             </button>
           ) : null}
-          <a className="secondary-button" href="#/batch-review">
-            返回任务中心
+          <a className="secondary-button" href={backHref}>
+            {backLabel}
           </a>
         </div>
       </section>

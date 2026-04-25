@@ -34,6 +34,17 @@ describe('App shell', () => {
     ).toBeInTheDocument();
   });
 
+  it('registers the dedicated notifications route', () => {
+    window.location.hash = '#/batch-review/notifications';
+    render(<App />);
+
+    expect(screen.getByRole('heading', { name: '站内通知' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '通知' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
+
   it('keeps /batch-review pointed at the working task-center experience', () => {
     window.location.hash = '#/batch-review';
     render(<App />);

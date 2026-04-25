@@ -117,4 +117,28 @@ describe('BatchReviewTaskDetailPage', () => {
     );
     expect(window.location.hash).toBe('#/batch-review/tasks/task-2');
   });
+
+  it('uses the notifications page as the back target when opened from notifications', async () => {
+    const getBatchReviewTaskDetail = vi.fn(async () => buildDetail());
+
+    render(
+      <MemoryRouter initialEntries={['/batch-review/tasks/task-1?from=notifications']}>
+        <Routes>
+          <Route
+            path="/batch-review/tasks/:taskId"
+            element={
+              <BatchReviewTaskDetailPage
+                accessToken="token"
+                getBatchReviewTaskDetail={getBatchReviewTaskDetail}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByRole('link', { name: '返回通知页' })
+    ).toHaveAttribute('href', '#/batch-review/notifications');
+  });
 });

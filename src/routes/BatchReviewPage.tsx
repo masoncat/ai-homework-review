@@ -253,7 +253,11 @@ export default function BatchReviewPage({
         {toastMessage ? <p className="batch-toast">{toastMessage}</p> : null}
       </section>
 
-      <BatchTaskSummary tasks={taskSummaries} />
+      <BatchTaskSummary
+        tasks={taskSummaries}
+        activeFilter="all"
+        onFilterChange={() => {}}
+      />
 
       {taskCenterError ? (
         <section className="status-card">

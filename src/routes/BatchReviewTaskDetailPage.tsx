@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import type { BatchReviewTaskDetail } from '../../shared/types';
 import BatchTaskDetail from '../components/BatchTaskDetail';
 import {
@@ -28,6 +28,7 @@ export default function BatchReviewTaskDetailPage({
   createBatchReviewRetryTask = defaultCreateBatchReviewRetryTask,
 }: BatchReviewTaskDetailPageProps) {
   const { taskId = '' } = useParams();
+  const location = useLocation();
   const [task, setTask] = useState<BatchReviewTaskDetail | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [retryPending, setRetryPending] = useState(false);
@@ -96,6 +97,14 @@ export default function BatchReviewTaskDetailPage({
     }
   }
 
+  const detailSource = new URLSearchParams(location.search).get('from');
+  const backHref =
+    detailSource === 'notifications'
+      ? '#/batch-review/notifications'
+      : '#/batch-review';
+  const backLabel =
+    detailSource === 'notifications' ? '返回通知页' : '返回任务中心';
+
   if (!accessToken) {
     return (
       <main className="page-shell">
@@ -139,6 +148,8 @@ export default function BatchReviewTaskDetailPage({
       onSelectPage={setSelectedPageNo}
       onRetry={handleRetry}
       retryPending={retryPending}
+      backHref={backHref}
+      backLabel={backLabel}
     />
   );
 }
