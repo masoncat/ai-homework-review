@@ -46,18 +46,7 @@ describe('offline batch review task routes', () => {
   it('creates a queued offline task when execution mode is offline', async () => {
     const repository = createRepository();
     const batchReviewProvider = {
-      prepareBatchPages: vi.fn(async () => [
-        {
-          pageNo: 1,
-          objectKey: 'derived/batch/page-1.png',
-          contentType: 'image/png',
-        },
-        {
-          pageNo: 2,
-          objectKey: 'derived/batch/page-2.png',
-          contentType: 'image/png',
-        },
-      ]),
+      countBatchPages: vi.fn(async () => 2),
       reviewBatch: vi.fn(),
     };
 
@@ -85,8 +74,15 @@ describe('offline batch review task routes', () => {
     });
 
     expect(response.status).toBe(202);
-    expect(batchReviewProvider.prepareBatchPages).toHaveBeenCalledTimes(1);
+    expect(batchReviewProvider.countBatchPages).toHaveBeenCalledTimes(1);
     expect(repository.createTask).toHaveBeenCalledTimes(1);
+    expect(repository.createTask).toHaveBeenCalledWith({
+      taskId: expect.any(String),
+      inviteCode: 'demo-code',
+      answerPdfObjectKey: 'uploads/batch/answers.pdf',
+      rubricObjectKey: 'uploads/batch/rubric.pdf',
+      pageNos: [1, 2],
+    });
     await expect(response.json()).resolves.toMatchObject({
       status: 'queued',
       totalPages: 2,

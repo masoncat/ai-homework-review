@@ -520,6 +520,7 @@ export function createBatchReviewRoute(options: {
 
   batchReviewRoute.post('/', async (c) => {
     const session = await requireBatchReviewSession(c);
+    const authHeader = c.req.header('authorization') ?? '';
 
     if (
       !c.get('config').batchVisionAiApiKey ||
@@ -548,18 +549,16 @@ export function createBatchReviewRoute(options: {
     if (c.get('config').batchReviewExecutionMode === 'offline') {
       const provider = c.get('batchReviewProvider');
 
-      if (!provider.prepareBatchPages) {
+      if (!provider.countBatchPages) {
         throw new HTTPException(503, {
-          message: '离线批量批改尚未完成页面预处理能力配置',
+          message: '离线批量批改尚未完成页数统计能力配置',
         });
       }
 
-      const preparedPages = await provider.prepareBatchPages(body, {
+      const totalPages = await provider.countBatchPages(body, {
         objectStoreRuntime: c.get('objectStoreRuntimeContext') ?? undefined,
       });
-      const pageNos = uniqueSortedPageNos(
-        preparedPages.map((page) => page.pageNo)
-      );
+      const pageNos = buildAllPageNos(totalPages);
       const taskId = crypto.randomUUID();
 
       await requireOfflineRepository(c).createTask({
@@ -742,6 +741,7 @@ export function createBatchReviewRoute(options: {
 
   batchReviewRoute.post('/:taskId/retry', async (c) => {
     await requireBatchReviewSession(c);
+    const authHeader = c.req.header('authorization') ?? '';
 
     const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
     const taskStore = c.get('batchReviewTaskStore');
