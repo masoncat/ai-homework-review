@@ -1,8 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import App from './App';
 
 describe('App shell', () => {
+  beforeEach(() => {
+    window.location.hash = '#/';
+  });
+
   it('renders the MVP brand heading', () => {
     render(<App />);
 
@@ -27,6 +31,17 @@ describe('App shell', () => {
 
     expect(
       screen.getByRole('heading', { name: '新建批量任务' })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps /batch-review pointed at the working task-center experience', () => {
+    window.location.hash = '#/batch-review';
+    render(<App />);
+
+    expect(
+      screen.getByRole('heading', {
+        name: '任务中心先看总览，再点开单份作业点评',
+      })
     ).toBeInTheDocument();
   });
 });

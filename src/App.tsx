@@ -1,7 +1,7 @@
 import { HashRouter, Route, Routes } from 'react-router-dom';
+import BatchReviewPage from './routes/BatchReviewPage';
 import BatchReviewNewTaskPage from './routes/BatchReviewNewTaskPage';
 import BatchReviewNotificationsPage from './routes/BatchReviewNotificationsPage';
-import BatchReviewOverviewPage from './routes/BatchReviewOverviewPage';
 import BatchReviewResultPage from './routes/BatchReviewResultPage';
 import BatchReviewTaskDetailPage from './routes/BatchReviewTaskDetailPage';
 import HomePage from './routes/HomePage';
@@ -12,7 +12,7 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/batch-review" element={<BatchReviewOverviewPage />} />
+        <Route path="/batch-review" element={<BatchReviewPage />} />
         <Route path="/batch-review/new" element={<BatchReviewNewTaskPage />} />
         <Route
           path="/batch-review/notifications"
