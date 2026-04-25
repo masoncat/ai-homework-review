@@ -20,4 +20,13 @@ describe('App shell', () => {
       screen.getByRole('heading', { name: '先填标准答案，再上传学生答题卡' })
     ).toBeInTheDocument();
   });
+
+  it('registers dedicated batch-review routes', () => {
+    window.location.hash = '#/batch-review/new';
+    render(<App />);
+
+    expect(
+      screen.getByRole('heading', { name: '新建批量任务' })
+    ).toBeInTheDocument();
+  });
 });
