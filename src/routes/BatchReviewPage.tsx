@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 import type {
   BatchReviewNotification,
   BatchReviewTaskSnapshot,
@@ -10,6 +10,7 @@ import BatchNotificationInbox from '../components/BatchNotificationInbox';
 import BatchTaskList from '../components/BatchTaskList';
 import BatchTaskSummary from '../components/BatchTaskSummary';
 import BatchReviewWizard from '../components/BatchReviewWizard';
+import { useBatchReviewTaskCenter } from '../hooks/useBatchReviewTaskCenter';
 import {
   listBatchReviewNotifications as defaultListBatchReviewNotifications,
   listBatchReviewTasks as defaultListBatchReviewTasks,
@@ -20,39 +21,7 @@ import {
   submitBatchReview as defaultSubmitBatchReview,
   uploadFileWithPolicy as defaultUploadFile,
 } from '../lib/api';
-import {
-  saveBatchReviewAccessSession,
-} from '../lib/demoSession';
 import { isApiConfigured } from '../lib/env';
-
-const INVITE_CODE_STORAGE_KEY = 'ai-homework-review:last-invite-code';
-const TASK_CENTER_POLL_INTERVAL_MS = 5000;
-
-function readInviteCodeFromUrl(location: Location = window.location) {
-  const pageQueryInviteCode = new URLSearchParams(location.search)
-    .get('inviteCode')
-    ?.trim();
-
-  if (pageQueryInviteCode) {
-    return pageQueryInviteCode;
-  }
-
-  const queryIndex = location.hash.indexOf('?');
-
-  if (queryIndex === -1) {
-    return '';
-  }
-
-  return (
-    new URLSearchParams(location.hash.slice(queryIndex + 1))
-      .get('inviteCode')
-      ?.trim() ?? ''
-  );
-}
-
-function readStoredInviteCode(storage: Storage = window.localStorage) {
-  return storage.getItem(INVITE_CODE_STORAGE_KEY)?.trim() ?? '';
-}
 
 function isLegacyInlineTask(
   task: BatchReviewTaskSummary | BatchReviewTaskSnapshot
@@ -107,30 +76,27 @@ export default function BatchReviewPage({
   loadDefaultBatchFiles = defaultLoadDefaultBatchFiles,
 }: BatchReviewPageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [inviteCode, setInviteCode] = useState(() => {
-    const inviteCodeFromUrl = readInviteCodeFromUrl();
-
-    return inviteCodeFromUrl || readStoredInviteCode();
-  });
   const [answerPdf, setAnswerPdf] = useState<File | null>(null);
   const [rubricFile, setRubricFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [taskCenterError, setTaskCenterError] = useState('');
-  const [accessToken, setAccessToken] = useState('');
-  const [taskSummaries, setTaskSummaries] = useState<BatchReviewTaskSummary[]>([]);
-  const [notifications, setNotifications] = useState<BatchReviewNotification[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!inviteCode.trim()) {
-      return;
-    }
-
-    window.localStorage.setItem(INVITE_CODE_STORAGE_KEY, inviteCode.trim());
-  }, [inviteCode]);
+  const {
+    inviteCode,
+    notifications,
+    taskCenterError,
+    taskSummaries,
+    toastMessage,
+    clearToastMessage,
+    markNotificationRead,
+    setInviteCode,
+    setTaskCenterAccessSession,
+  } = useBatchReviewTaskCenter({
+    requestSession,
+    listBatchReviewTasks,
+    listBatchReviewNotifications,
+    markBatchReviewNotificationRead,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -161,120 +127,18 @@ export default function BatchReviewPage({
   }, [loadDefaultBatchFiles]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function ensureTaskCenterSession() {
-      if (!inviteCode.trim() || !isApiConfigured()) {
-        return;
-      }
-
-      try {
-        const session = await requestSession({
-          inviteCode: inviteCode.trim(),
-          humanToken: 'pass-human-check',
-        });
-
-        if (cancelled) {
-          return;
-        }
-
-        setAccessToken(session.accessToken);
-        saveBatchReviewAccessSession({
-          inviteCode: inviteCode.trim(),
-          accessToken: session.accessToken,
-        });
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setTaskCenterError(
-          error instanceof Error ? error.message : '获取任务中心会话失败'
-        );
-      }
-    }
-
-    void ensureTaskCenterSession();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [inviteCode, requestSession]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let intervalId: number | null = null;
-
-    async function loadTaskCenterData() {
-      if (!accessToken) {
-        return;
-      }
-
-      try {
-        const [nextTasks, nextNotifications] = await Promise.all([
-          listBatchReviewTasks(accessToken),
-          listBatchReviewNotifications(accessToken),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setTaskSummaries(nextTasks);
-        setNotifications(nextNotifications);
-        setTaskCenterError('');
-
-        const unreadNew = nextNotifications.find(
-          (item) => !item.isRead && !seenNotificationIdsRef.current.has(item.id)
-        );
-
-        if (unreadNew) {
-          setToastMessage(unreadNew.message);
-        }
-
-        seenNotificationIdsRef.current = new Set(
-          nextNotifications.map((item) => item.id)
-        );
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setTaskCenterError(
-          error instanceof Error ? error.message : '获取任务中心数据失败'
-        );
-      }
-    }
-
-    void loadTaskCenterData();
-
-    if (accessToken) {
-      intervalId = window.setInterval(() => {
-        void loadTaskCenterData();
-      }, TASK_CENTER_POLL_INTERVAL_MS);
-    }
-
-    return () => {
-      cancelled = true;
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-    };
-  }, [accessToken, listBatchReviewNotifications, listBatchReviewTasks]);
-
-  useEffect(() => {
     if (!toastMessage) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setToastMessage('');
+      clearToastMessage();
     }, 3000);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [toastMessage]);
+  }, [clearToastMessage, toastMessage]);
 
   const canUseApi =
     isApiConfigured() ||
@@ -335,11 +199,7 @@ export default function BatchReviewPage({
         humanToken: 'pass-human-check',
       });
 
-      setAccessToken(session.accessToken);
-      saveBatchReviewAccessSession({
-        inviteCode: inviteCode.trim(),
-        accessToken: session.accessToken,
-      });
+      setTaskCenterAccessSession(session.accessToken, inviteCode.trim());
 
       const answerPolicy = await requestUploadPolicy(
         session.accessToken,
@@ -370,25 +230,6 @@ export default function BatchReviewPage({
       );
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function handleMarkNotificationRead(notificationId: string) {
-    if (!accessToken) {
-      return;
-    }
-
-    try {
-      await markBatchReviewNotificationRead(accessToken, notificationId);
-      setNotifications((current) =>
-        current.map((item) =>
-          item.id === notificationId ? { ...item, isRead: true } : item
-        )
-      );
-    } catch (error) {
-      setTaskCenterError(
-        error instanceof Error ? error.message : '更新通知状态失败'
-      );
     }
   }
 
@@ -430,7 +271,9 @@ export default function BatchReviewPage({
 
       <BatchNotificationInbox
         notifications={notifications}
-        onMarkRead={handleMarkNotificationRead}
+        onMarkRead={(notificationId) => {
+          void markNotificationRead(notificationId);
+        }}
         onOpenTask={(taskId) => {
           window.location.hash = `#/batch-review/tasks/${taskId}`;
         }}

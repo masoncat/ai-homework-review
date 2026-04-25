@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   BatchReviewNotification,
   BatchReviewTaskSummary,
@@ -42,6 +42,12 @@ function buildNotification(): BatchReviewNotification {
 }
 
 describe('BatchReviewPage', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.location.hash = '#/batch-review';
+  });
+
   it('shows recent task summaries before the new task form', async () => {
     window.localStorage.setItem(
       'ai-homework-review:last-invite-code',
@@ -73,7 +79,43 @@ describe('BatchReviewPage', () => {
     });
   });
 
+  it('reuses the saved batch-review access session to load task-center data', async () => {
+    window.localStorage.setItem(
+      'ai-homework-review:last-invite-code',
+      'stored-code'
+    );
+    window.sessionStorage.setItem(
+      'ai-homework-review:batch-access-session',
+      JSON.stringify({
+        inviteCode: 'stored-code',
+        accessToken: 'saved-token',
+      })
+    );
+    const requestSession = vi.fn(async () => buildSession());
+    const listBatchReviewTasks = vi.fn(async () => [buildTaskSummary()]);
+    const listBatchReviewNotifications = vi.fn(async () => [buildNotification()]);
+
+    render(
+      <BatchReviewPage
+        requestSession={requestSession}
+        listBatchReviewTasks={listBatchReviewTasks}
+        listBatchReviewNotifications={listBatchReviewNotifications}
+        loadDefaultBatchFiles={vi.fn().mockRejectedValue(new Error('skip fixtures'))}
+      />
+    );
+
+    expect(await screen.findByText('最近 7 天')).toBeInTheDocument();
+    expect(await screen.findByText('最近提醒')).toBeInTheDocument();
+    expect(listBatchReviewTasks).toHaveBeenCalledWith('saved-token');
+    expect(listBatchReviewNotifications).toHaveBeenCalledWith('saved-token');
+    expect(requestSession).not.toHaveBeenCalled();
+  });
+
   it('opens the related task detail when a notification is clicked', async () => {
+    window.localStorage.setItem(
+      'ai-homework-review:last-invite-code',
+      'stored-code'
+    );
     const requestSession = vi.fn(async () => buildSession());
     const listBatchReviewTasks = vi.fn(async () => [buildTaskSummary()]);
     const listBatchReviewNotifications = vi.fn(async () => [buildNotification()]);
