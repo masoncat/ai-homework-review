@@ -27,9 +27,14 @@ export interface RenderedPdfPage {
 }
 
 export interface PdfPageExtractor {
+  countPages?: (input: {
+    answerPdfObjectKey: string;
+    runtime?: ObjectStoreRuntimeContext;
+  }) => Promise<number>;
   extractPages(input: {
     answerPdfObjectKey: string;
     outputPrefix: string;
+    pageNos?: number[];
     runtime?: ObjectStoreRuntimeContext;
   }): Promise<ExtractedPdfPage[]>;
 }
@@ -51,6 +56,7 @@ type StreamRenderedPage = (page: RenderedPdfPage) => Promise<void>;
 
 interface RenderPdfPagesInput {
   pdfBytes: Uint8Array;
+  pageNos?: number[];
   onPage: StreamRenderedPage;
 }
 
@@ -84,7 +90,14 @@ async function renderPdfPagesWithPdfJs(
   const pdf = await loadingTask.promise;
 
   try {
-    for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
+    const requestedPageNos =
+      input.pageNos?.length
+        ? [...new Set(input.pageNos)]
+            .filter((pageNo) => pageNo >= 1 && pageNo <= pdf.numPages)
+            .sort((left, right) => left - right)
+        : Array.from({ length: pdf.numPages }, (_, index) => index + 1);
+
+    for (const pageNo of requestedPageNos) {
       const page = await pdf.getPage(pageNo);
       try {
         const viewport = page.getViewport({ scale: 2 });
@@ -113,6 +126,21 @@ async function renderPdfPagesWithPdfJs(
   }
 }
 
+async function countPdfPagesWithPdfJs(pdfBytes: Uint8Array): Promise<number> {
+  const loadingTask = getDocument({
+    data: pdfBytes,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  });
+  const pdf = await loadingTask.promise;
+
+  try {
+    return pdf.numPages;
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
 function resolvePageExtension(contentType: string) {
   const normalized = contentType.toLowerCase();
 
@@ -132,12 +160,22 @@ function resolvePageExtension(contentType: string) {
 export function createPdfPageExtractor({
   objectStore,
   renderPdfPages = renderPdfPagesWithPdfJs,
+  countPdfPages = countPdfPagesWithPdfJs,
 }: {
   objectStore: ObjectStoreWithBytes;
   renderPdfPages?: RenderPdfPages;
+  countPdfPages?: (pdfBytes: Uint8Array) => Promise<number>;
 }): PdfPageExtractor {
   return {
-    async extractPages({ answerPdfObjectKey, outputPrefix, runtime }) {
+    async countPages({ answerPdfObjectKey, runtime }) {
+      const pdfBytes = await objectStore.getObjectBytes(
+        answerPdfObjectKey,
+        runtime
+      );
+
+      return countPdfPages(pdfBytes);
+    },
+    async extractPages({ answerPdfObjectKey, outputPrefix, pageNos, runtime }) {
       const pdfBytes = await objectStore.getObjectBytes(
         answerPdfObjectKey,
         runtime
@@ -145,6 +183,7 @@ export function createPdfPageExtractor({
       const savedPages: ExtractedPdfPage[] = [];
       await renderPdfPages({
         pdfBytes,
+        pageNos,
         onPage: async (page) => {
           const extension = resolvePageExtension(page.contentType);
           const objectKey = `${outputPrefix}/page-${page.pageNo}.${extension}`;
