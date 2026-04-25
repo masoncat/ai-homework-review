@@ -86,24 +86,7 @@ describe('POST /batch-review', () => {
   it('initializes total pages before returning the task snapshot', async () => {
     const savedTasks = new Map<string, Record<string, unknown>>();
     const batchReviewProvider = {
-      prepareBatchPages: vi.fn(async () => [
-        {
-          pageNo: 1,
-          objectKey: 'derived/batch/page-1.png',
-          contentType: 'image/png',
-        },
-        {
-          pageNo: 2,
-          objectKey: 'derived/batch/page-2.png',
-          contentType: 'image/png',
-        },
-        {
-          pageNo: 3,
-          objectKey: 'derived/batch/page-3.png',
-          contentType: 'image/png',
-        },
-      ]),
-      reviewPreparedBatchPages: vi.fn(),
+      countBatchPages: vi.fn(async () => 3),
       reviewBatch: vi.fn(),
     };
 
@@ -144,7 +127,7 @@ describe('POST /batch-review', () => {
       processedPages: 0,
       pendingPageNos: [1, 2, 3],
     });
-    expect(batchReviewProvider.prepareBatchPages).toHaveBeenCalledTimes(1);
+    expect(batchReviewProvider.countBatchPages).toHaveBeenCalledTimes(1);
     expect(batchReviewProvider.reviewBatch).not.toHaveBeenCalled();
   });
 
@@ -469,8 +452,12 @@ describe('GET /batch-review/:taskId', () => {
     });
   });
 
-  it('advances queued tasks during polling when no background worker keeps running', async () => {
+});
+
+describe('POST /batch-review/:taskId/run', () => {
+  it('advances one chunk of pages and leaves the rest for the next async run', async () => {
     const savedTasks = new Map<string, Record<string, unknown>>();
+    let scheduledRun: (() => Promise<void>) | null = null;
     const task = {
       taskId: 'batch-task-poll-driven',
       status: 'processing' as const,
@@ -481,35 +468,19 @@ describe('GET /batch-review/:taskId', () => {
       rubricObjectKey: 'uploads/batch/rubric.pdf',
       createdAt: '2026-04-17T00:00:00.000Z',
       updatedAt: '2026-04-17T00:00:00.000Z',
-      preparedPages: [
-        {
-          pageNo: 1,
-          objectKey: 'derived/batch/page-1.png',
-          contentType: 'image/png',
-        },
-        {
-          pageNo: 2,
-          objectKey: 'derived/batch/page-2.png',
-          contentType: 'image/png',
-        },
-        {
-          pageNo: 3,
-          objectKey: 'derived/batch/page-3.png',
-          contentType: 'image/png',
-        },
-      ],
     };
     savedTasks.set(task.taskId, task as unknown as Record<string, unknown>);
 
     const batchReviewProvider = {
-      reviewPreparedBatchPages: vi.fn(async (_input, options?: Record<string, unknown>) => {
-        expect(options?.pageNos).toEqual([1, 2]);
+      countBatchPages: vi.fn(async () => 3),
+      reviewBatch: vi.fn(async (_input, options?: Record<string, unknown>) => {
+        expect(options?.pageNos).toEqual([1]);
 
         return {
           taskId: 'progress-task',
           answerPdfObjectKey: 'uploads/batch/answers.pdf',
           rubricObjectKey: 'uploads/batch/rubric.pdf',
-          totalPages: 2,
+          totalPages: 1,
           pages: [
             {
               pageNo: 1,
@@ -523,33 +494,20 @@ describe('GET /batch-review/:taskId', () => {
               issues: ['说明略少'],
               suggestions: ['补充说明'],
             },
-            {
-              pageNo: 2,
-              displayName: '第 2 份',
-              answerImageObjectKey: 'derived/batch/page-2.png',
-              answerImageUrl: 'https://oss.example.com/page-2.png',
-              score: 6,
-              level: '基本达到',
-              summary: '第二页已完成',
-              strengths: ['方法接近正确'],
-              issues: ['计算有误'],
-              suggestions: ['复核中间过程'],
-            },
           ],
           summary: {
-            totalPages: 2,
-            averageScore: 7,
+            totalPages: 1,
+            averageScore: 8,
             rows: [],
             levelCounts: {
               超出预期: 0,
               达到预期: 1,
-              基本达到: 1,
+              基本达到: 0,
               待提升: 0,
             },
           },
         };
       }),
-      reviewBatch: vi.fn(),
     };
 
     const app = createApp({
@@ -570,35 +528,38 @@ describe('GET /batch-review/:taskId', () => {
           return (savedTasks.get(taskId) as never) ?? null;
         },
       }),
+      scheduleBatchReviewTask: (_taskId, run) => {
+        scheduledRun = run;
+      },
     });
 
     const response = await app.request(
-      'http://local/batch-review/batch-task-poll-driven',
+      'http://local/batch-review/batch-task-poll-driven/run',
       {
-        method: 'GET',
+        method: 'POST',
         headers: {
           authorization: 'Bearer demo-token',
         },
       }
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     await expect(response.json()).resolves.toMatchObject({
       taskId: 'batch-task-poll-driven',
       status: 'processing',
+    });
+    expect(batchReviewProvider.reviewBatch).toHaveBeenCalledTimes(1);
+    expect(savedTasks.get('batch-task-poll-driven')).toMatchObject({
+      status: 'processing',
       totalPages: 3,
-      processedPages: 2,
-      pendingPageNos: [3],
+      processedPages: 1,
+      pendingPageNos: [2, 3],
       result: {
-        totalPages: 2,
-        pages: [
-          expect.objectContaining({ pageNo: 1 }),
-          expect.objectContaining({ pageNo: 2 }),
-        ],
+        totalPages: 1,
+        pages: [expect.objectContaining({ pageNo: 1 })],
       },
     });
-    expect(batchReviewProvider.reviewPreparedBatchPages).toHaveBeenCalledTimes(1);
-    expect(batchReviewProvider.reviewBatch).not.toHaveBeenCalled();
+    expect(scheduledRun).toBeTypeOf('function');
   });
 });
 

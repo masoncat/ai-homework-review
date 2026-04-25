@@ -21,7 +21,7 @@ const batchReviewBodySchema = z.object({
 const batchReviewRetryBodySchema = z.object({
   pageNos: z.array(z.number().int().positive()).optional(),
 });
-const BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE = 2;
+const BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE = 1;
 
 function nowIso() {
   return new Date().toISOString();
@@ -34,6 +34,28 @@ function defaultScheduleBatchReviewTask(
   setTimeout(() => {
     void run();
   }, 0);
+}
+
+async function triggerAsyncBatchReviewRun(
+  requestUrl: string,
+  taskId: string,
+  authHeader: string
+) {
+  const url = new URL(requestUrl);
+  url.pathname = `/batch-review/${taskId}/run`;
+  url.search = '';
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      authorization: authHeader,
+      'x-fc-invocation-type': 'Async',
+    },
+  });
+
+  if (!response.ok && response.status !== 202) {
+    throw new Error('调度批量批改异步任务失败');
+  }
 }
 
 function toTaskErrorMessage(error: unknown) {
@@ -112,19 +134,10 @@ function resolveRetryPageNos(task: BatchReviewTaskSnapshot, requestedPageNos?: n
   return undefined;
 }
 
-function canPreparePollDrivenBatchReview(
+function canCountBatchReviewPages(
   provider: AppBindings['Variables']['batchReviewProvider']
 ) {
-  return (
-    typeof provider.prepareBatchPages === 'function' &&
-    typeof provider.reviewPreparedBatchPages === 'function'
-  );
-}
-
-function canReviewPreparedBatchPages(
-  provider: AppBindings['Variables']['batchReviewProvider']
-) {
-  return typeof provider.reviewPreparedBatchPages === 'function';
+  return typeof provider.countBatchPages === 'function';
 }
 
 async function initializeBatchReviewTask(
@@ -137,26 +150,24 @@ async function initializeBatchReviewTask(
 ) {
   const provider = c.get('batchReviewProvider');
 
-  if (!canPreparePollDrivenBatchReview(provider)) {
+  if (!canCountBatchReviewPages(provider)) {
     return task;
   }
 
   const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
   const taskStore = c.get('batchReviewTaskStore');
-  const prepareBatchPages = provider.prepareBatchPages;
-  const preparedPages =
-    task.preparedPages?.length && task.totalPages
-      ? task.preparedPages
-      : await prepareBatchPages!(
-          {
-            answerPdfObjectKey: task.answerPdfObjectKey,
-            rubricObjectKey: task.rubricObjectKey,
-          },
-          {
-            objectStoreRuntime: runtime,
-          }
-        );
-  const totalPages = task.totalPages ?? preparedPages.length;
+  const countBatchPages = provider.countBatchPages;
+  const totalPages =
+    task.totalPages ??
+    (await countBatchPages!(
+      {
+        answerPdfObjectKey: task.answerPdfObjectKey,
+        rubricObjectKey: task.rubricObjectKey,
+      },
+      {
+        objectStoreRuntime: runtime,
+      }
+    ));
   const pendingPageNos = getPendingBatchReviewPageNos({
     ...task,
     totalPages,
@@ -171,7 +182,6 @@ async function initializeBatchReviewTask(
           : 'completed',
     totalPages,
     pendingPageNos: pendingPageNos.length > 0 ? pendingPageNos : undefined,
-    preparedPages,
     updatedAt: nowIso(),
   };
 
@@ -210,7 +220,8 @@ async function processBatchReviewTask(
     options?.pageNos?.length ? options.pageNos : allPendingPageNos
   );
   const useLegacyWholeBatchRun =
-    targetPageNos.length === 0 && !currentTask.preparedPages?.length;
+    targetPageNos.length === 0 &&
+    (currentTask.totalPages ?? currentTask.result?.totalPages ?? 0) === 0;
 
   if (targetPageNos.length === 0 && !useLegacyWholeBatchRun) {
     return;
@@ -298,15 +309,10 @@ async function processBatchReviewTask(
         );
       },
     };
-    const providerResult =
-      currentTask.preparedPages?.length &&
-      provider.reviewPreparedBatchPages &&
-      canReviewPreparedBatchPages(provider)
-        ? await provider.reviewPreparedBatchPages(providerInput, {
-            ...providerOptions,
-            preparedPages: currentTask.preparedPages,
-          })
-        : await provider.reviewBatch(providerInput, providerOptions);
+    const providerResult = await provider.reviewBatch(
+      providerInput,
+      providerOptions
+    );
     const latestTask =
       (await taskStore.getTask(taskId, runtime)) ?? currentTask;
     const result = {
@@ -381,6 +387,60 @@ async function processBatchReviewTask(
   }
 }
 
+async function runBatchReviewTaskStep(
+  c: {
+    get: <TKey extends keyof AppBindings['Variables']>(
+      key: TKey
+    ) => AppBindings['Variables'][TKey];
+    req: {
+      url: string;
+    };
+  },
+  taskId: string,
+  authHeader: string,
+  scheduleBatchReviewTask?: (
+    taskId: string,
+    run: () => Promise<void>
+  ) => void
+) {
+  const runtime = c.get('objectStoreRuntimeContext') ?? undefined;
+  const taskStore = c.get('batchReviewTaskStore');
+  const task = await taskStore.getTask(taskId, runtime);
+
+  if (!task || task.status === 'completed' || task.status === 'failed') {
+    return task;
+  }
+
+  const initializedTask = await initializeBatchReviewTask(c, task);
+  const pendingPageNos = getPendingBatchReviewPageNos(initializedTask);
+
+  if (pendingPageNos.length === 0) {
+    return initializedTask;
+  }
+
+  await processBatchReviewTask(c, taskId, {
+    pageNos: pendingPageNos.slice(0, BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE),
+  });
+
+  const latestTask = await taskStore.getTask(taskId, runtime);
+
+  if (
+    latestTask &&
+    latestTask.status === 'processing' &&
+    getPendingBatchReviewPageNos(latestTask).length > 0
+  ) {
+    if (scheduleBatchReviewTask) {
+      scheduleBatchReviewTask(taskId, async () => {
+        await runBatchReviewTaskStep(c, taskId, authHeader, scheduleBatchReviewTask);
+      });
+    } else {
+      await triggerAsyncBatchReviewRun(c.req.url, taskId, authHeader);
+    }
+  }
+
+  return latestTask;
+}
+
 export function createBatchReviewRoute(options: {
   scheduleBatchReviewTask?: (
     taskId: string,
@@ -443,8 +503,15 @@ export function createBatchReviewRoute(options: {
 
     await taskStore.saveTask(task, runtime);
 
-    if (canPreparePollDrivenBatchReview(c.get('batchReviewProvider'))) {
+    if (canCountBatchReviewPages(c.get('batchReviewProvider'))) {
       const initializedTask = await initializeBatchReviewTask(c, task);
+      if (options.scheduleBatchReviewTask) {
+        scheduleBatchReviewTask(task.taskId, async () => {
+          await runBatchReviewTaskStep(c, task.taskId, authHeader, scheduleBatchReviewTask);
+        });
+      } else {
+        await triggerAsyncBatchReviewRun(c.req.url, task.taskId, authHeader);
+      }
       return c.json(initializedTask, 202);
     }
 
@@ -478,21 +545,41 @@ export function createBatchReviewRoute(options: {
     }
 
     if (
-      canReviewPreparedBatchPages(c.get('batchReviewProvider')) &&
+      canCountBatchReviewPages(c.get('batchReviewProvider')) &&
       (task.status === 'queued' || task.status === 'processing')
     ) {
       task = await initializeBatchReviewTask(c, task);
-      const pendingPageNos = getPendingBatchReviewPageNos(task);
-
-      if (pendingPageNos.length > 0) {
-        await processBatchReviewTask(c, task.taskId, {
-          pageNos: pendingPageNos.slice(0, BATCH_REVIEW_POLL_PAGE_CHUNK_SIZE),
-        });
-        task = (await taskStore.getTask(task.taskId, runtime)) ?? task;
-      }
     }
 
     return c.json(task);
+  });
+
+  batchReviewRoute.post('/:taskId/run', async (c) => {
+    const authHeader = c.req.header('authorization') ?? '';
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (!token) {
+      return c.json({ message: '未登录或会话已失效' }, 401);
+    }
+
+    try {
+      await verifyToken(token, c.get('config'));
+    } catch {
+      throw new HTTPException(401, { message: '未登录或会话已失效' });
+    }
+
+    const latestTask = await runBatchReviewTaskStep(
+      c,
+      c.req.param('taskId'),
+      authHeader,
+      options.scheduleBatchReviewTask ? scheduleBatchReviewTask : undefined
+    );
+
+    if (!latestTask) {
+      throw new HTTPException(404, { message: '未找到批量批改任务' });
+    }
+
+    return c.json({ taskId: latestTask.taskId, status: latestTask.status }, 202);
   });
 
   batchReviewRoute.post('/:taskId/retry', async (c) => {
@@ -526,7 +613,7 @@ export function createBatchReviewRoute(options: {
       (retryPageNos?.length ?? 0) + retainedPages.length;
     const nextTask: BatchReviewTaskSnapshot = {
       ...task,
-      status: canReviewPreparedBatchPages(c.get('batchReviewProvider'))
+      status: canCountBatchReviewPages(c.get('batchReviewProvider'))
         ? 'processing'
         : 'queued',
       totalPages: totalPages || undefined,
@@ -544,7 +631,15 @@ export function createBatchReviewRoute(options: {
 
     await taskStore.saveTask(nextTask, runtime);
 
-    if (!canReviewPreparedBatchPages(c.get('batchReviewProvider'))) {
+    if (canCountBatchReviewPages(c.get('batchReviewProvider'))) {
+      if (options.scheduleBatchReviewTask) {
+        scheduleBatchReviewTask(task.taskId, async () => {
+          await runBatchReviewTaskStep(c, task.taskId, authHeader, scheduleBatchReviewTask);
+        });
+      } else {
+        await triggerAsyncBatchReviewRun(c.req.url, task.taskId, authHeader);
+      }
+    } else {
       scheduleBatchReviewTask(task.taskId, async () => {
         await processBatchReviewTask(c, task.taskId);
       });
