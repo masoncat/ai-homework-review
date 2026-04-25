@@ -1,5 +1,49 @@
 import type { BatchReviewTaskSummary } from '../../shared/types';
 
+function formatTaskSummary(summary: string) {
+  const trimmedSummary = summary.trim();
+
+  if (!trimmedSummary.startsWith('{')) {
+    return summary;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedSummary) as Record<string, unknown>;
+    const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+
+    if (rows.length === 1) {
+      const firstRow = rows[0];
+
+      if (firstRow && typeof firstRow === 'object') {
+        const rowSummary = (firstRow as Record<string, unknown>).summary;
+
+        if (typeof rowSummary === 'string' && rowSummary.trim()) {
+          return rowSummary;
+        }
+      }
+    }
+
+    const totalPages = parsed.totalPages;
+    const averageScore = parsed.averageScore;
+
+    if (typeof totalPages === 'number' && !Number.isNaN(totalPages)) {
+      if (typeof averageScore === 'number' && !Number.isNaN(averageScore)) {
+        const formattedAverageScore = Number.isInteger(averageScore)
+          ? String(averageScore)
+          : averageScore.toFixed(1);
+
+        return `共处理 ${totalPages} 份作业，平均分 ${formattedAverageScore}`;
+      }
+
+      return `共处理 ${totalPages} 份作业`;
+    }
+  } catch {
+    return summary;
+  }
+
+  return summary;
+}
+
 function formatTaskStatus(status: BatchReviewTaskSummary['status']) {
   switch (status) {
     case 'queued':
@@ -70,7 +114,7 @@ export default function BatchTaskList({
               <div className="batch-task-card-head">
                 <div>
                   <strong>任务 {task.taskId.slice(0, 8)}</strong>
-                  <p>{task.summary}</p>
+                  <p>{formatTaskSummary(task.summary)}</p>
                 </div>
                 <span className={`task-status-chip status-${task.status}`}>
                   {formatTaskStatus(task.status)}

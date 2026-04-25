@@ -265,6 +265,41 @@ function parseJsonValue(value: unknown): unknown {
   }
 }
 
+function formatSummaryAverageScore(value: unknown): string | null {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function getStructuredSummaryText(value: Record<string, unknown>): string | null {
+  const rows = Array.isArray(value.rows) ? value.rows : [];
+
+  if (rows.length === 1) {
+    const firstRow = rows[0];
+
+    if (firstRow && typeof firstRow === 'object') {
+      const rowSummary = (firstRow as Record<string, unknown>).summary;
+
+      if (typeof rowSummary === 'string' && rowSummary.trim()) {
+        return rowSummary;
+      }
+    }
+  }
+
+  const totalPages = value.totalPages;
+  const averageScore = formatSummaryAverageScore(value.averageScore);
+
+  if (typeof totalPages === 'number' && !Number.isNaN(totalPages)) {
+    return averageScore === null
+      ? `共处理 ${totalPages} 份作业`
+      : `共处理 ${totalPages} 份作业，平均分 ${averageScore}`;
+  }
+
+  return null;
+}
+
 function getSummaryText(value: unknown): string {
   const parsed = parseJsonValue(value);
 
@@ -279,6 +314,10 @@ function getSummaryText(value: unknown): string {
       if (typeof candidate === 'string' && candidate.trim()) {
         return candidate;
       }
+    }
+    const structuredSummaryText = getStructuredSummaryText(summaryRecord);
+    if (structuredSummaryText) {
+      return structuredSummaryText;
     }
     return JSON.stringify(parsed);
   }

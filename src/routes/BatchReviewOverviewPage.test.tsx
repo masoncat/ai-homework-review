@@ -130,4 +130,30 @@ describe('BatchReviewOverviewPage', () => {
     expect(screen.queryByText('进行中任务')).not.toBeInTheDocument();
     expect(screen.queryByText('已完成任务')).not.toBeInTheDocument();
   });
+
+  it('does not render raw summary json strings in task cards', async () => {
+    const rawSummaryJson =
+      '{"rows":[{"level":"待提升","score":0.5,"pageNo":8,"summary":"作答基本空白，未能说明负二层车位变化过程。","displayName":"第 8 份"}],"totalPages":1,"levelCounts":{"待提升":1,"基本达到":0,"超出预期":0,"达到预期":0},"averageScore":0.5}';
+    const listBatchReviewTasks = vi.fn(async () => [
+      buildTaskSummary({
+        taskId: 'task-json',
+        status: 'completed',
+        summary: rawSummaryJson,
+      }),
+    ]);
+
+    render(
+      <HashRouter>
+        <BatchReviewOverviewPage
+          listBatchReviewTasks={listBatchReviewTasks}
+          listBatchReviewNotifications={vi.fn(async () => [])}
+        />
+      </HashRouter>
+    );
+
+    expect(
+      await screen.findByText('作答基本空白，未能说明负二层车位变化过程。')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(rawSummaryJson)).not.toBeInTheDocument();
+  });
 });
