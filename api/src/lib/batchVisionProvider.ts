@@ -57,6 +57,8 @@ export interface BatchReviewProvider {
 }
 
 const BATCH_REVIEW_PAGE_CONCURRENCY = 6;
+const BATCH_VISION_MAX_ATTEMPTS = 3;
+const BATCH_VISION_RETRY_BASE_DELAY_MS = 800;
 
 export interface BatchReviewProgressSnapshot {
   totalPages: number;
@@ -260,6 +262,16 @@ function summarizeModelErrorPayload(payloadText: string) {
   return trimmed.replace(/\s+/g, ' ').slice(0, 240);
 }
 
+function shouldRetryBatchVisionRequest(status: number) {
+  return status === 429 || status >= 500;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function scoreBatchReviewPage(
   config: Pick<
     AppConfig,
@@ -269,48 +281,64 @@ async function scoreBatchReviewPage(
   fetchImpl: typeof fetch = fetch
 ): Promise<ScorePageResult> {
   assertBatchVisionConfigured(config);
+  for (let attempt = 1; attempt <= BATCH_VISION_MAX_ATTEMPTS; attempt += 1) {
+    const response = await fetchImpl(
+      `${config.batchVisionAiBaseUrl.replace(/\/$/, '')}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${config.batchVisionAiApiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: config.batchVisionAiModel,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是严格的小学数学批改助手。只返回 JSON，不要输出 Markdown，不要解释。',
+            },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: buildBatchReviewPrompt() },
+                {
+                  type: 'image_url',
+                  image_url: { url: input.rubricInput },
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: input.pageInput },
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
 
-  const response = await fetchImpl(
-    `${config.batchVisionAiBaseUrl.replace(/\/$/, '')}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${config.batchVisionAiApiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.batchVisionAiModel,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              '你是严格的小学数学批改助手。只返回 JSON，不要输出 Markdown，不要解释。',
-          },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: buildBatchReviewPrompt() },
-              {
-                type: 'image_url',
-                image_url: { url: input.rubricInput },
-              },
-              {
-                type: 'image_url',
-                image_url: { url: input.pageInput },
-              },
-            ],
-          },
-        ],
-      }),
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+      };
+      const content = payload.choices?.[0]?.message?.content;
+
+      return scorePageResponseSchema.parse(extractJsonPayload(content));
     }
-  );
 
-  if (!response.ok) {
     const responseText = await response.text().catch(() => '');
     const statusText = response.statusText ? ` ${response.statusText}` : '';
     const detail = summarizeModelErrorPayload(responseText);
+
+    if (
+      attempt < BATCH_VISION_MAX_ATTEMPTS &&
+      shouldRetryBatchVisionRequest(response.status)
+    ) {
+      await delay(BATCH_VISION_RETRY_BASE_DELAY_MS * attempt);
+      continue;
+    }
 
     throw new Error(
       `调用批量批改多模态模型失败: HTTP ${response.status}${statusText}${
@@ -319,12 +347,7 @@ async function scoreBatchReviewPage(
     );
   }
 
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: unknown } }>;
-  };
-  const content = payload.choices?.[0]?.message?.content;
-
-  return scorePageResponseSchema.parse(extractJsonPayload(content));
+  throw new Error('批量批改多模态模型调用未返回结果');
 }
 
 export function createBatchReviewProvider(

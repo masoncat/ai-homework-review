@@ -207,6 +207,87 @@ describe('createBatchReviewProvider', () => {
     );
   });
 
+  it('retries a transient upstream 500 once before failing the page', async () => {
+    vi.useFakeTimers();
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: async () =>
+          '<html><body><center><h1>500 Internal Server Error</h1></center></body></html>',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  score: 8.5,
+                  level: '达到预期',
+                  summary: '重试成功',
+                  strengths: ['优点'],
+                  issues: ['问题'],
+                  suggestions: ['建议'],
+                }),
+              },
+            },
+          ],
+        }),
+      });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const provider = createBatchReviewProvider(
+      {
+        batchVisionAiApiKey: 'sk-test',
+        batchVisionAiBaseUrl: 'https://example.com/v1',
+        batchVisionAiModel: 'qwen-vl-max-latest',
+      },
+      {
+        saveObject: vi.fn(async () => undefined),
+        getObjectBytes: vi
+          .fn()
+          .mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
+          .mockResolvedValueOnce(new Uint8Array([4, 5, 6])),
+        getObjectAiInput: vi
+          .fn()
+          .mockResolvedValueOnce('https://oss.example.com/page-1.png'),
+      } as never,
+      {
+        extractPages: vi.fn(async () => [
+          {
+            pageNo: 1,
+            objectKey: 'derived/page-1.png',
+            contentType: 'image/png',
+          },
+        ]),
+      }
+    );
+
+    const reviewPromise = provider.reviewBatch({
+      answerPdfObjectKey: 'uploads/answers.pdf',
+      rubricObjectKey: 'uploads/rubric.jpeg',
+    });
+
+    await vi.runAllTimersAsync();
+
+    await expect(reviewPromise).resolves.toMatchObject({
+      pages: [
+        expect.objectContaining({
+          pageNo: 1,
+          score: 8.5,
+          summary: '重试成功',
+        }),
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it('emits progress as soon as each page finishes', async () => {
     const onProgress = vi.fn();
     const first = createDeferred<{
