@@ -111,6 +111,54 @@ describe('BatchReviewPage', () => {
     expect(requestSession).not.toHaveBeenCalled();
   });
 
+  it('reacquires a session when the saved batch-review access session is rejected', async () => {
+    window.localStorage.setItem(
+      'ai-homework-review:last-invite-code',
+      'stored-code'
+    );
+    window.sessionStorage.setItem(
+      'ai-homework-review:batch-access-session',
+      JSON.stringify({
+        inviteCode: 'stored-code',
+        accessToken: 'stale-token',
+      })
+    );
+    const requestSession = vi.fn(async () => ({
+      accessToken: 'fresh-token',
+      expiresInSeconds: 7200,
+    }));
+    const staleTokenError = Object.assign(new Error('会话已失效'), {
+      status: 401,
+    });
+    const listBatchReviewTasks = vi
+      .fn()
+      .mockRejectedValueOnce(staleTokenError)
+      .mockResolvedValueOnce([buildTaskSummary()]);
+    const listBatchReviewNotifications = vi
+      .fn()
+      .mockRejectedValueOnce(staleTokenError)
+      .mockResolvedValueOnce([buildNotification()]);
+
+    render(
+      <BatchReviewPage
+        requestSession={requestSession}
+        listBatchReviewTasks={listBatchReviewTasks}
+        listBatchReviewNotifications={listBatchReviewNotifications}
+        loadDefaultBatchFiles={vi.fn().mockRejectedValue(new Error('skip fixtures'))}
+      />
+    );
+
+    await waitFor(() => expect(requestSession).toHaveBeenCalledWith({
+      inviteCode: 'stored-code',
+      humanToken: 'pass-human-check',
+    }));
+    await waitFor(() => expect(listBatchReviewTasks).toHaveBeenLastCalledWith('fresh-token'));
+    await waitFor(() =>
+      expect(listBatchReviewNotifications).toHaveBeenLastCalledWith('fresh-token')
+    );
+    expect(await screen.findByText('最近 7 天')).toBeInTheDocument();
+  });
+
   it('opens the related task detail when a notification is clicked', async () => {
     window.localStorage.setItem(
       'ai-homework-review:last-invite-code',

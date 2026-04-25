@@ -19,11 +19,19 @@ function formatTaskStatus(status: BatchReviewTaskSummary['status']) {
 
 interface BatchTaskListProps {
   tasks: BatchReviewTaskSummary[];
+  title?: string;
+  description?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
   onOpenTask: (taskId: string) => void;
 }
 
 export default function BatchTaskList({
   tasks,
+  title = '最近 7 天的批量任务',
+  description = '过程态弱化，只保留进度、状态和是否需要重试。',
+  emptyTitle = '最近 7 天还没有批量任务',
+  emptyDescription = '先创建一个新任务，后面这里会展示离线进度和结果总览。',
   onOpenTask,
 }: BatchTaskListProps) {
   if (tasks.length === 0) {
@@ -32,9 +40,9 @@ export default function BatchTaskList({
         <div className="section-heading">
           <div>
             <p className="eyebrow">任务中心</p>
-            <h2>最近 7 天还没有批量任务</h2>
+            <h2>{emptyTitle}</h2>
           </div>
-          <p>先创建一个新任务，后面这里会展示离线进度和结果总览。</p>
+          <p>{emptyDescription}</p>
         </div>
       </section>
     );
@@ -45,9 +53,9 @@ export default function BatchTaskList({
       <div className="section-heading">
         <div>
           <p className="eyebrow">任务中心</p>
-          <h2>最近 7 天的批量任务</h2>
+          <h2>{title}</h2>
         </div>
-        <p>过程态弱化，只保留进度、状态和是否需要重试。</p>
+        <p>{description}</p>
       </div>
 
       <div className="batch-task-list">

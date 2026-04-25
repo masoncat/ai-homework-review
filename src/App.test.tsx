@@ -38,10 +38,10 @@ describe('App shell', () => {
     window.location.hash = '#/batch-review';
     render(<App />);
 
-    expect(
-      screen.getByRole('heading', {
-        name: '任务中心先看总览，再点开单份作业点评',
-      })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '批量任务中心' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '任务中心' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 });

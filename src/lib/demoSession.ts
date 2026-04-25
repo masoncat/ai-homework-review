@@ -125,3 +125,7 @@ export function loadBatchReviewAccessSession(): BatchReviewAccessSession | null 
     return null;
   }
 }
+
+export function clearBatchReviewAccessSession() {
+  sessionStorage.removeItem(BATCH_ACCESS_STORAGE_KEY);
+}

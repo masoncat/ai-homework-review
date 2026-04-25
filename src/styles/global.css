@@ -55,6 +55,10 @@ button {
   padding: 24px 16px 64px;
 }
 
+.page-shell--with-bottom-nav {
+  padding-bottom: 112px;
+}
+
 .hero-card,
 .demo-card,
 .capability-card,
@@ -264,12 +268,25 @@ h3 {
 
 .batch-task-stat-card {
   padding: 18px;
+  text-align: left;
 }
 
 .batch-task-stat-card strong {
   display: block;
   font-size: 2rem;
   margin-bottom: 6px;
+}
+
+.batch-task-stat-card span {
+  color: var(--muted);
+}
+
+.batch-task-stat-card.is-active,
+.batch-task-stat-card[aria-pressed='true'] {
+  border-color: rgba(215, 90, 32, 0.28);
+  box-shadow: 0 18px 36px rgba(215, 90, 32, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 247, 238, 0.98), rgba(250, 238, 224, 0.92));
 }
 
 .batch-task-card {
@@ -918,6 +935,38 @@ textarea {
   margin-top: 6px;
 }
 
+.batch-bottom-nav {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px;
+  border-radius: 24px;
+  border: 1px solid rgba(38, 53, 77, 0.08);
+  background: rgba(255, 250, 243, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgba(35, 38, 54, 0.14);
+}
+
+.batch-bottom-nav__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 18px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.batch-bottom-nav__item.is-active {
+  background: linear-gradient(135deg, var(--accent), #f08937);
+  color: #fff;
+}
+
 .status-chip {
   margin-top: 16px;
   padding: 8px 14px;
@@ -957,6 +1006,10 @@ textarea {
 @media (min-width: 720px) {
   .page-shell {
     padding: 36px 24px 80px;
+  }
+
+  .page-shell--with-bottom-nav {
+    padding-bottom: 140px;
   }
 
   .triple-grid,
@@ -1009,5 +1062,12 @@ textarea {
   .batch-page-detail {
     grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
     align-items: start;
+  }
+
+  .batch-bottom-nav {
+    left: 50%;
+    right: auto;
+    width: min(420px, calc(100vw - 48px));
+    transform: translateX(-50%);
   }
 }

@@ -12,6 +12,7 @@ import {
   requestSession as defaultRequestSession,
 } from '../lib/api';
 import {
+  clearBatchReviewAccessSession,
   loadBatchReviewAccessSession,
   saveBatchReviewAccessSession,
 } from '../lib/demoSession';
@@ -138,6 +139,12 @@ export function useBatchReviewTaskCenter({
   const hasActiveAccessToken =
     accessToken.length > 0 && accessTokenInviteCode === trimmedInviteCode;
 
+  function clearTaskCenterAccessSession() {
+    clearBatchReviewAccessSession();
+    setAccessToken('');
+    setAccessTokenInviteCode('');
+  }
+
   useEffect(() => {
     if (!trimmedInviteCode) {
       return;
@@ -148,8 +155,7 @@ export function useBatchReviewTaskCenter({
 
   useEffect(() => {
     if (!trimmedInviteCode) {
-      setAccessToken('');
-      setAccessTokenInviteCode('');
+      clearTaskCenterAccessSession();
       return;
     }
 
@@ -162,8 +168,7 @@ export function useBatchReviewTaskCenter({
     }
 
     if (accessTokenInviteCode && accessTokenInviteCode !== trimmedInviteCode) {
-      setAccessToken('');
-      setAccessTokenInviteCode('');
+      clearTaskCenterAccessSession();
     }
   }, [accessTokenInviteCode, trimmedInviteCode]);
 
@@ -249,6 +254,16 @@ export function useBatchReviewTaskCenter({
           return;
         }
 
+        const authError =
+          typeof error === 'object' &&
+          error !== null &&
+          'status' in error &&
+          (error.status === 401 || error.status === 403);
+
+        if (authError) {
+          clearTaskCenterAccessSession();
+        }
+
         setTaskCenterError(
           error instanceof Error ? error.message : '获取任务中心数据失败'
         );
@@ -302,8 +317,7 @@ export function useBatchReviewTaskCenter({
     const normalizedInviteCode = nextInviteCode.trim();
 
     if (!normalizedInviteCode || !nextAccessToken) {
-      setAccessToken('');
-      setAccessTokenInviteCode('');
+      clearTaskCenterAccessSession();
       return;
     }
 
