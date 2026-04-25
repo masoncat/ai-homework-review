@@ -8,10 +8,15 @@ resources:
       region: ${env(ALIYUN_REGION)}
       service:
         name: ai-homework-review
-        internetAccess: true
       functionName: ai-homework-review-api
       runtime: nodejs20
       timeout: 60
+      internetAccess: true
+      vpcConfig:
+        vpcId: vpc-bp1fskmbnrlcp7hb35544
+        securityGroupId: sg-bp1c4d16t01znw04zt6e
+        vSwitchIds:
+          - vsw-bp1h8z856gnh8tltp2b3g
       handler: bundle/index.handler
       code: ./
       triggers:
